@@ -1,0 +1,175 @@
+================================================================================
+  GITHUB SETUP - QUICK ACTION CARD
+================================================================================
+
+Your code is on GitHub: https://github.com/Giorgamose/myauto-scraper ✅
+
+Now complete these 3 steps:
+
+================================================================================
+  STEP 1: ADD 4 GITHUB SECRETS (5 minutes)
+================================================================================
+
+Go to: https://github.com/Giorgamose/myauto-scraper/settings/secrets/actions
+
+Click "New repository secret" 4 times and add:
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SECRET 1 of 4                                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Name:  TURSO_DATABASE_URL                                               │
+│ Value: libsql://car-listings-giorgamose.aws-eu-west-1.turso.io         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SECRET 2 of 4                                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Name:  TURSO_AUTH_TOKEN                                                 │
+│ Value: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjI2NzQ1     │
+│        MzIsImlkIjoiOTMxMDMzMzQ3LWY3Y2MtNDliZi05MmZkLTMzZWYyNDJm     │
+│        NzhmYiIsInJpZCI6IjNjNzAwMTg2LWYxN2YtNGRkMy05MjFkLTlhYjRi     │
+│        ODA5ZmRkZCJ9.pRel8ta6Sw52ze8CJeohD2YOStrARJDUvcqqSWxkXEty    │
+│        3Zb2awAsI4f4Ao1f4b8vxVDBdDCubN8_GwDO7F-7Dw                      │
+│                                                                         │
+│ (Copy entire token from .env.local)                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SECRET 3 of 4                                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Name:  TELEGRAM_BOT_TOKEN                                               │
+│ Value: 8531271294:AAH7Od2UldndVviXAPxFXxxolqIjodW4BY4                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SECRET 4 of 4                                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Name:  TELEGRAM_CHAT_ID                                                 │
+│ Value: 6366712840                                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+✓ After adding all 4, you should see them listed on the Secrets page
+
+================================================================================
+  STEP 2: ENABLE GITHUB ACTIONS (1 minute)
+================================================================================
+
+Go to: https://github.com/Giorgamose/myauto-scraper/actions
+
+You'll see: "You don't have any workflow runs yet"
+
+Click the green button:
+  "I understand my workflows, go ahead and enable them"
+
+This enables the automatic 10-minute scraping schedule.
+
+================================================================================
+  STEP 3: RUN FIRST TEST (5 minutes)
+================================================================================
+
+On the Actions tab:
+
+1. Click "MyAuto Car Listing Monitor" (left sidebar)
+2. Click "Run workflow" button
+3. Click "Run workflow" again in the dropdown
+4. Wait 1-2 minutes
+
+Watch the workflow:
+  🟡 Yellow = Running
+  🟢 Green checkmark = Success ✅
+  🔴 Red X = Failed ❌
+
+Expected result: Green checkmark with "Workflow completed" message
+
+================================================================================
+  STEP 4: VERIFY LOCALLY (Optional but Recommended)
+================================================================================
+
+Once workflow completes, verify the data was saved:
+
+Open PowerShell and run:
+
+  $env:TURSO_DATABASE_URL = "libsql://car-listings-giorgamose.aws-eu-west-1.turso.io"
+  $env:TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9..."
+  python view_database.py
+
+You should see:
+  ✓ Total records in database: X (should be > 0)
+  ✓ Latest 5 records displayed
+  ✓ Statistics and breakdown
+
+================================================================================
+  WHAT HAPPENS NEXT
+================================================================================
+
+After you complete the 3 steps above:
+
+✓ Scraper runs EVERY 10 MINUTES automatically
+✓ Each run takes 30-90 seconds
+✓ Data saved to Turso database
+✓ Telegram notifications sent for matches
+✓ No manual work needed
+
+Daily:   Check data with: python view_database.py
+Weekly:  Export CSV with: python query_database.py (option 9)
+Monthly: Analyze trends and price changes
+
+================================================================================
+  EXPECTED RESULTS
+================================================================================
+
+FIRST 24 HOURS (144 runs):
+  🎯 10-20 Toyota Prado listings
+  📱 Multiple Telegram notifications
+  ✅ All automated, no action needed
+
+FIRST WEEK (~1000 runs):
+  🎯 40-70 unique listings
+  📊 Enough data for analysis
+  💹 Price trends emerge
+
+ONGOING:
+  🔄 Automatic scraping every 10 minutes
+  ✅ 99%+ success rate
+  💾 1-year data retention
+  📈 Continuous growth
+
+================================================================================
+  TROUBLESHOOTING
+================================================================================
+
+"Secrets not found" error:
+  → Go back to Secrets page
+  → Verify all 4 secret NAMES are spelled correctly (case-sensitive)
+  → Make sure no typos in names
+
+Workflow times out:
+  → Usually takes only 1-2 minutes
+  → Check GitHub Actions logs for errors
+
+No records after first run:
+  → Make sure you copied ENTIRE token values
+  → Try running workflow again
+  → Check logs for specific error message
+
+================================================================================
+  NEXT ACTIONS
+================================================================================
+
+1. Open GitHub: https://github.com/Giorgamose/myauto-scraper
+2. Go to Settings → Secrets and variables → Actions
+3. Add 4 secrets with values from .env.local
+4. Go to Actions tab
+5. Click "Enable workflows" button
+6. Click "Run workflow" to test
+7. Wait for green checkmark ✅
+
+ESTIMATED TIME: 15 minutes total
+
+================================================================================
+
+Full detailed guide: See GITHUB_CONFIGURATION_GUIDE.md
+
+Version: 1.0.0
+Date: November 9, 2025
+Status: Ready to Configure

@@ -1,6 +1,5 @@
 name: MyAuto Car Listing Monitor
 
-# Trigger schedule and manual dispatch
 on:
   schedule:
     # Run every 10 minutes
@@ -9,7 +8,6 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  REQUIREMENTS_FILE: 'requirements.txt'
 
 jobs:
   monitor:

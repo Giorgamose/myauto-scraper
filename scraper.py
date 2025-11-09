@@ -18,6 +18,15 @@ logger = logging.getLogger(__name__)
 class MyAutoScraper:
     """Scrape car listings from MyAuto.ge"""
 
+    # Real browser user agents for rotation
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    ]
+
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize scraper with configuration
@@ -30,23 +39,32 @@ class MyAutoScraper:
         self.base_url = "https://www.myauto.ge/ka"
         self.session = requests.Session()
 
-        # Setup headers
+        # Add session persistence for cookies
+        self.session.cookies.clear()
+
+        # Track last request time for delays
+        self.last_request_time = 0
+
+        # Setup headers with realistic browser simulation
         self.headers = {
-            "User-Agent": self.config.get(
-                "user_agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
+            "User-Agent": self.config.get("user_agent", self.USER_AGENTS[0]),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9,ka;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "max-age=0",
             "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Referer": "https://www.myauto.ge/",
         }
 
         # Get settings with defaults
-        self.timeout = self.config.get("request_timeout_seconds", 10)
-        self.delay = self.config.get("delay_between_requests_seconds", 2)
-        self.max_retries = self.config.get("max_retries", 3)
+        self.timeout = self.config.get("request_timeout_seconds", 15)
+        self.delay = self.config.get("delay_between_requests_seconds", 3)
+        self.max_retries = self.config.get("max_retries", 5)
         self.retry_delay = self.config.get("retry_delay_seconds", 5)
 
     def fetch_search_results(self, search_config: Dict[str, Any]) -> List[Dict]:
@@ -127,7 +145,7 @@ class MyAutoScraper:
     def _make_request(self, url: str, params: Dict = None,
                      max_retries: int = None) -> Optional[requests.Response]:
         """
-        Make HTTP request with retry logic
+        Make HTTP request with retry logic and bot evasion
 
         Args:
             url: URL to fetch
@@ -142,6 +160,17 @@ class MyAutoScraper:
 
         for attempt in range(max_retries):
             try:
+                # Enforce delay between requests
+                current_time = time.time()
+                time_since_last = current_time - self.last_request_time
+                if time_since_last < self.delay:
+                    sleep_time = self.delay - time_since_last
+                    logger.debug(f"[*] Enforcing delay: sleeping {sleep_time:.2f}s")
+                    time.sleep(sleep_time)
+
+                # Rotate user agent for each attempt
+                self.headers["User-Agent"] = self.USER_AGENTS[attempt % len(self.USER_AGENTS)]
+
                 logger.debug(f"[*] Request attempt {attempt + 1}/{max_retries}: {url}")
 
                 response = self.session.get(
@@ -152,6 +181,8 @@ class MyAutoScraper:
                     allow_redirects=True
                 )
 
+                self.last_request_time = time.time()
+
                 response.raise_for_status()
 
                 if response.status_code == 200:
@@ -160,11 +191,11 @@ class MyAutoScraper:
                 else:
                     logger.warning(f"[WARN] HTTP {response.status_code}")
 
-                    # Retry on certain status codes
-                    if response.status_code in [429, 500, 502, 503, 504]:
+                    # Retry on 403 Forbidden (bot detection) and server errors
+                    if response.status_code in [403, 429, 500, 502, 503, 504]:
                         if attempt < max_retries - 1:
                             wait_time = self.retry_delay * (attempt + 1)
-                            logger.info(f"[*] Waiting {wait_time}s before retry...")
+                            logger.info(f"[*] Status {response.status_code}: Waiting {wait_time}s before retry...")
                             time.sleep(wait_time)
                             continue
 

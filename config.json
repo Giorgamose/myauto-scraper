@@ -36,11 +36,11 @@
     }
   ],
   "scraper_settings": {
-    "request_timeout_seconds": 10,
-    "delay_between_requests_seconds": 2,
+    "request_timeout_seconds": 15,
+    "delay_between_requests_seconds": 4,
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "max_retries": 3,
-    "retry_delay_seconds": 5
+    "max_retries": 5,
+    "retry_delay_seconds": 8
   },
   "notification_settings": {
     "send_on_new_listings": true,

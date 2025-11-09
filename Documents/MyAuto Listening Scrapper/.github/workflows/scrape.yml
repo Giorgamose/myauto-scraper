@@ -36,42 +36,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      # 3. Cache pip dependencies for faster runs
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      # 4. Install Python dependencies
+      # 3. Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r ${{ env.REQUIREMENTS_FILE }}
 
-      # 5. Download previous database state from artifacts
-      - name: Download previous database state
-        uses: actions/download-artifact@v4
-        with:
-          name: database-state
-          path: ./artifacts/
-        continue-on-error: true
-
-      # 6. Restore database if artifact exists
-      - name: Restore database artifact
-        run: |
-          if [ -f ./artifacts/database-state.db ]; then
-            echo "[OK] Found previous database state, restoring..."
-            cp ./artifacts/database-state.db ./database-state.db
-          else
-            echo "[*] No previous database state found, will create new"
-          fi
-        shell: bash
-        continue-on-error: true
-
-      # 7. Run the monitoring script
+      # 4. Run the monitoring script
       - name: Run car listing monitor
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
@@ -87,26 +58,8 @@ jobs:
           echo "[*] Monitoring cycle completed with exit code: $RESULT"
           exit $RESULT
 
-      # 8. Prepare database for artifact upload
-      - name: Prepare database artifact
-        if: always()
-        run: |
-          mkdir -p ./artifacts/
-          # Database state is stored by turso, but we could save a backup here
-          echo "[OK] Database artifact prepared"
-        shell: bash
-
-      # 9. Upload database state as artifact for next run
-      - name: Upload database state
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: database-state
-          path: ./artifacts/
-          retention-days: 7
-
-      # 10. Notify on failure (optional)
-      - name: Send error notification
+      # 5. Notify on failure
+      - name: Send error notification on failure
         if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -126,10 +79,8 @@ jobs:
         shell: bash
         continue-on-error: true
 
-      # 11. Log completion
+      # 6. Log completion
       - name: Log workflow completion
         if: always()
         run: |
           echo "[*] Workflow completed at $(date)"
-          echo "[*] GitHub Actions context available for debugging"
-        shell: bash

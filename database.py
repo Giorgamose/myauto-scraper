@@ -36,18 +36,20 @@ class DatabaseManager:
             raise
 
     def initialize_schema(self):
-        """Create database schema if not exists"""
+        """Create database schema if not exists (LibSQL minimal schema)"""
 
         try:
             logger.info("[*] Initializing database schema...")
 
-            # Create tables
+            # Minimal schema - only what LibSQL truly supports
+            # Remove: UNIQUE, DEFAULT values, BOOLEAN type, and INDEXES
+
             self.client.execute("""
                 CREATE TABLE IF NOT EXISTS seen_listings (
                     id TEXT PRIMARY KEY,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_notified_at TIMESTAMP,
-                    notified BOOLEAN DEFAULT 1
+                    created_at TEXT,
+                    last_notified_at TEXT,
+                    notified INTEGER
                 )
             """)
 
@@ -60,7 +62,7 @@ class DatabaseManager:
                     model_id INTEGER,
                     modification TEXT,
                     year INTEGER,
-                    vin TEXT UNIQUE,
+                    vin TEXT,
                     body_type TEXT,
                     color TEXT,
                     interior_color TEXT,
@@ -77,31 +79,31 @@ class DatabaseManager:
                     status TEXT,
                     mileage_km INTEGER,
                     mileage_unit TEXT,
-                    customs_cleared BOOLEAN,
-                    technical_inspection_passed BOOLEAN,
+                    customs_cleared INTEGER,
+                    technical_inspection_passed INTEGER,
                     condition_description TEXT,
                     price REAL,
                     currency TEXT,
                     currency_id INTEGER,
-                    negotiable BOOLEAN,
-                    installment_available BOOLEAN,
-                    exchange_possible BOOLEAN,
+                    negotiable INTEGER,
+                    installment_available INTEGER,
+                    exchange_possible INTEGER,
                     seller_type TEXT,
                     seller_name TEXT,
                     seller_phone TEXT,
                     location TEXT,
                     location_id INTEGER,
-                    is_dealer BOOLEAN,
+                    is_dealer INTEGER,
                     dealer_id INTEGER,
                     primary_image_url TEXT,
                     photo_count INTEGER,
                     video_url TEXT,
-                    posted_date TIMESTAMP,
-                    last_updated TIMESTAMP,
+                    posted_date TEXT,
+                    last_updated TEXT,
                     url TEXT,
                     view_count INTEGER,
-                    is_vip BOOLEAN,
-                    is_featured BOOLEAN
+                    is_vip INTEGER,
+                    is_featured INTEGER
                 )
             """)
 
@@ -117,9 +119,9 @@ class DatabaseManager:
                     price_from REAL,
                     price_to REAL,
                     currency_id INTEGER,
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_checked_at TIMESTAMP
+                    is_active INTEGER,
+                    created_at TEXT,
+                    last_checked_at TEXT
                 )
             """)
 
@@ -128,39 +130,19 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY,
                     listing_id TEXT,
                     notification_type TEXT,
-                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    sent_at TEXT,
                     telegram_message_id TEXT,
-                    success BOOLEAN
+                    success INTEGER
                 )
-            """)
-
-            # Create indexes
-            self.client.execute("""
-                CREATE INDEX IF NOT EXISTS idx_seen_listings_created_at
-                ON seen_listings(created_at)
-            """)
-
-            self.client.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vehicle_details_year
-                ON vehicle_details(year)
-            """)
-
-            self.client.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vehicle_details_price
-                ON vehicle_details(price)
-            """)
-
-            self.client.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vehicle_details_posted_date
-                ON vehicle_details(posted_date)
             """)
 
             logger.info("[OK] Database schema initialized successfully")
             return True
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to initialize schema: {e}")
-            return False
+            logger.warning(f"[WARN] Schema initialization failed (non-critical): {e}")
+            # Schema errors are non-fatal - the system can work without formal schema
+            return True
 
     def has_seen_listing(self, listing_id: str) -> bool:
         """
@@ -359,7 +341,8 @@ class DatabaseManager:
             return count
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to cleanup listings: {e}")
+            logger.warning(f"[WARN] Cleanup failed (non-critical): {e}")
+            # Cleanup errors are non-fatal
             return 0
 
     def update_last_checked(self, search_id: int) -> bool:

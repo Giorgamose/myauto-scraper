@@ -183,21 +183,21 @@ class MyAutoScraper:
 
                 self.last_request_time = time.time()
 
-                response.raise_for_status()
-
+                # Check status code BEFORE raise_for_status() so we can retry on 403
                 if response.status_code == 200:
                     logger.debug(f"[OK] Response 200 OK")
                     return response
-                else:
-                    logger.warning(f"[WARN] HTTP {response.status_code}")
 
-                    # Retry on 403 Forbidden (bot detection) and server errors
-                    if response.status_code in [403, 429, 500, 502, 503, 504]:
-                        if attempt < max_retries - 1:
-                            wait_time = self.retry_delay * (attempt + 1)
-                            logger.info(f"[*] Status {response.status_code}: Waiting {wait_time}s before retry...")
-                            time.sleep(wait_time)
-                            continue
+                # Handle retryable error codes (403, 429, 5xx)
+                if response.status_code in [403, 429, 500, 502, 503, 504]:
+                    if attempt < max_retries - 1:
+                        wait_time = self.retry_delay * (attempt + 1)
+                        logger.info(f"[*] Status {response.status_code}: Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                        continue
+
+                # For other non-200 codes, raise exception
+                response.raise_for_status()
 
                 return None
 

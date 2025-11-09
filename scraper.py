@@ -2,19 +2,23 @@
 """
 Scraper Module - Fetch MyAuto.ge Car Listings
 Handles fetching and parsing listings from MyAuto.ge
+Uses Playwright for JavaScript-enabled scraping to bypass bot detection
 """
 
-import requests
 import logging
 import time
-import urllib3
+import random
 from typing import List, Dict, Optional, Any
 from bs4 import BeautifulSoup
 from parser import MyAutoParser
-from urllib.parse import urljoin, quote
+from urllib.parse import urljoin, quote, urlencode
 
-# Disable SSL warnings for Windows SSL verification issues
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+try:
+    from playwright.sync_api import sync_playwright, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    Page = None
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +43,16 @@ class MyAutoScraper:
             config: Configuration dict with scraper settings
         """
 
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.warning("[WARN] Playwright not installed. Install with: pip install playwright")
+
         self.config = config.get("scraper_settings", {})
         self.base_url = "https://www.myauto.ge/ka"
-        self.session = requests.Session()
 
-        # Add session persistence for cookies
-        self.session.cookies.clear()
+        # Playwright resources (initialized on first use)
+        self.playwright = None
+        self.browser = None
+        self.context = None
 
         # Track last request time for delays
         self.last_request_time = 0
@@ -66,7 +74,7 @@ class MyAutoScraper:
         }
 
         # Get settings with defaults
-        self.timeout = self.config.get("request_timeout_seconds", 15)
+        self.timeout = self.config.get("request_timeout_seconds", 15) * 1000  # Convert to ms for Playwright
         self.delay = self.config.get("delay_between_requests_seconds", 3)
         self.max_retries = self.config.get("max_retries", 5)
         self.retry_delay = self.config.get("retry_delay_seconds", 5)
@@ -99,7 +107,7 @@ class MyAutoScraper:
                 return []
 
             # Parse search results
-            listings = self._parse_search_results(response.text, url)
+            listings = self._parse_search_results(response["html"], url)
 
             logger.info(f"[OK] Found {len(listings)} listings in search results")
 
@@ -133,7 +141,7 @@ class MyAutoScraper:
             time.sleep(self.delay)
 
             # Parse listing details
-            listing_data = self._parse_listing_details(response.text, listing_id, url)
+            listing_data = self._parse_listing_details(response["html"], listing_id, url)
 
             if listing_data:
                 logger.debug(f"[OK] Fetched listing: {listing_id}")
@@ -146,10 +154,46 @@ class MyAutoScraper:
             logger.error(f"[ERROR] Error fetching listing {listing_id}: {e}")
             return None
 
+    def _init_browser(self):
+        """Initialize Playwright browser context"""
+        if self.browser is not None:
+            return
+
+        try:
+            logger.debug("[*] Initializing Playwright browser...")
+            self.playwright = sync_playwright().start()
+
+            # Launch browser with stealth settings to avoid detection
+            self.browser = self.playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ]
+            )
+
+            # Create context with realistic viewport and user agent
+            self.context = self.browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent=self.headers.get("User-Agent", self.USER_AGENTS[0]),
+                extra_http_headers={
+                    "Accept-Language": self.headers["Accept-Language"],
+                    "Accept": self.headers["Accept"],
+                    "Referer": self.headers["Referer"],
+                },
+                ignore_https_errors=True,  # Ignore SSL issues
+            )
+
+            logger.debug("[OK] Playwright browser initialized")
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to initialize Playwright: {e}")
+            raise
+
     def _make_request(self, url: str, params: Dict = None,
-                     max_retries: int = None) -> Optional[requests.Response]:
+                     max_retries: int = None) -> Optional[Dict[str, Any]]:
         """
-        Make HTTP request with retry logic and bot evasion
+        Make HTTP request with retry logic and bot evasion using Playwright
 
         Args:
             url: URL to fetch
@@ -157,10 +201,18 @@ class MyAutoScraper:
             max_retries: Override max retries
 
         Returns:
-            Response object or None
+            Dict with 'html' and 'status' keys, or None on failure
         """
 
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.error("[ERROR] Playwright not installed. Install with: pip install playwright")
+            return None
+
         max_retries = max_retries or self.max_retries
+
+        # Initialize browser on first use
+        if self.browser is None:
+            self._init_browser()
 
         for attempt in range(max_retries):
             try:
@@ -172,56 +224,70 @@ class MyAutoScraper:
                     logger.debug(f"[*] Enforcing delay: sleeping {sleep_time:.2f}s")
                     time.sleep(sleep_time)
 
-                # Rotate user agent for each attempt
-                self.headers["User-Agent"] = self.USER_AGENTS[attempt % len(self.USER_AGENTS)]
+                # Add random jitter to seem more human-like
+                jitter = random.uniform(0.1, 0.5)
+                time.sleep(jitter)
 
-                logger.debug(f"[*] Request attempt {attempt + 1}/{max_retries}: {url}")
+                # Build full URL with parameters
+                full_url = url
+                if params:
+                    full_url = f"{url}?{urlencode(params)}"
 
-                response = self.session.get(
-                    url,
-                    headers=self.headers,
-                    params=params,
-                    timeout=self.timeout,
-                    allow_redirects=True,
-                    verify=False
-                )
+                logger.debug(f"[*] Request attempt {attempt + 1}/{max_retries}: {full_url}")
 
-                self.last_request_time = time.time()
+                # Create a new page for this request (better isolation)
+                page = self.context.new_page()
 
-                # Check status code BEFORE raise_for_status() so we can retry on 403
-                if response.status_code == 200:
-                    logger.debug(f"[OK] Response 200 OK")
-                    return response
+                try:
+                    # Navigate to URL with Playwright (executes JavaScript)
+                    # Headers are inherited from context
+                    # Use "load" instead of "networkidle" to avoid timeouts on heavy JS sites
+                    response = page.goto(
+                        full_url,
+                        wait_until="load",
+                        timeout=self.timeout
+                    )
 
-                # Handle retryable error codes (403, 429, 5xx)
-                if response.status_code in [403, 429, 500, 502, 503, 504]:
+                    self.last_request_time = time.time()
+
+                    if response is None:
+                        logger.warning(f"[WARN] No response on attempt {attempt + 1}")
+                        if attempt < max_retries - 1:
+                            time.sleep(self.retry_delay)
+                            continue
+                        return None
+
+                    status_code = response.status
+                    html_content = page.content()
+
+                    # Check status code
+                    if status_code == 200:
+                        logger.debug(f"[OK] Response 200 OK")
+                        return {"html": html_content, "status": status_code}
+
+                    # Handle retryable error codes (403, 429, 5xx)
+                    if status_code in [403, 429, 500, 502, 503, 504]:
+                        if attempt < max_retries - 1:
+                            wait_time = self.retry_delay * (attempt + 1)
+                            logger.info(f"[*] Status {status_code}: Waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                            continue
+
+                    # For other non-200 codes, log error
+                    logger.warning(f"[WARN] Unexpected status {status_code}")
                     if attempt < max_retries - 1:
-                        wait_time = self.retry_delay * (attempt + 1)
-                        logger.info(f"[*] Status {response.status_code}: Waiting {wait_time}s before retry...")
-                        time.sleep(wait_time)
+                        time.sleep(self.retry_delay)
                         continue
+                    return None
 
-                # For other non-200 codes, raise exception
-                response.raise_for_status()
-
-                return None
-
-            except requests.exceptions.Timeout:
-                logger.warning(f"[WARN] Timeout on attempt {attempt + 1}")
-                if attempt < max_retries - 1:
-                    time.sleep(self.retry_delay)
-                    continue
-                return None
-
-            except requests.exceptions.ConnectionError:
-                logger.warning(f"[WARN] Connection error on attempt {attempt + 1}")
-                if attempt < max_retries - 1:
-                    time.sleep(self.retry_delay)
-                    continue
-                return None
+                finally:
+                    page.close()
 
             except Exception as e:
-                logger.error(f"[ERROR] Error making request: {e}")
+                logger.warning(f"[WARN] Error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
                 return None
 
         logger.error(f"[ERROR] Failed after {max_retries} attempts")
@@ -426,52 +492,59 @@ class MyAutoScraper:
             return None
 
     def close(self):
-        """Close session"""
+        """Close Playwright browser"""
 
         try:
-            self.session.close()
-            logger.info("[OK] Session closed")
+            if self.context:
+                self.context.close()
+            if self.browser:
+                self.browser.close()
+            if self.playwright:
+                self.playwright.stop()
+            logger.info("[OK] Playwright browser closed")
         except Exception as e:
-            logger.error(f"[ERROR] Error closing session: {e}")
+            logger.error(f"[ERROR] Error closing browser: {e}")
 
 
 def test_scraper():
-    """Test scraper (requires network access)"""
+    """Test scraper (requires network access and Playwright)"""
 
     logging.basicConfig(level=logging.INFO)
 
-    logger.info("[*] Testing scraper...")
+    logger.info("[*] Testing scraper with Playwright...")
+
+    if not PLAYWRIGHT_AVAILABLE:
+        logger.error("[ERROR] Playwright not available. Install with: pip install playwright")
+        return False
 
     # Create minimal config
     config = {
         "scraper_settings": {
-            "request_timeout_seconds": 10,
-            "delay_between_requests_seconds": 1,
+            "request_timeout_seconds": 30,
+            "delay_between_requests_seconds": 2,
             "user_agent": "Mozilla/5.0",
             "max_retries": 2,
-            "retry_delay_seconds": 3
+            "retry_delay_seconds": 5
         }
     }
 
     scraper = MyAutoScraper(config)
 
-    # Try to fetch a single listing
-    logger.info("[*] Testing listing fetch...")
+    try:
+        # Try to fetch a simple search first (faster test)
+        logger.info("[*] Testing search fetch...")
+        response = scraper._make_request("https://www.myauto.ge/ka/s/iyideba-manqanebi")
 
-    # Use the example listing from the user
-    listing_id = "119084515"
-    listing = scraper.fetch_listing_details(listing_id)
+        if response:
+            logger.info(f"[OK] Successfully fetched search page (status {response['status']})")
+            logger.info(f"    HTML size: {len(response['html'])} bytes")
+            return True
+        else:
+            logger.warning("[WARN] Could not fetch search page")
+            return False
 
-    if listing:
-        logger.info(f"[OK] Successfully fetched listing {listing_id}")
-        logger.info(f"    Make: {listing.get('vehicle', {}).get('make')}")
-        logger.info(f"    Model: {listing.get('vehicle', {}).get('model')}")
-        logger.info(f"    Year: {listing.get('vehicle', {}).get('year')}")
-        logger.info(f"    Price: {listing.get('pricing', {}).get('price')}")
-        return True
-    else:
-        logger.warning("[WARN] Could not fetch listing")
-        return False
+    finally:
+        scraper.close()
 
 
 if __name__ == "__main__":

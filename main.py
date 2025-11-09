@@ -121,12 +121,7 @@ class CarListingMonitor:
             # 4. Initialize scraper
             logger.info("[*] Initializing scraper...")
             try:
-                scraper_settings = self.config.get("scraper_settings", {})
-                self.scraper = MyAutoScraper(
-                    timeout=scraper_settings.get("request_timeout_seconds", 10),
-                    delay_between_requests=scraper_settings.get("delay_between_requests_seconds", 2),
-                    max_retries=scraper_settings.get("max_retries", 3)
-                )
+                self.scraper = MyAutoScraper(self.config)
                 logger.info("[OK] Scraper initialized")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to initialize scraper: {e}")

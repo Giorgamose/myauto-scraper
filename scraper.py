@@ -233,7 +233,10 @@ class MyAutoScraper:
                 if params:
                     full_url = f"{url}?{urlencode(params)}"
 
-                logger.debug(f"[*] Request attempt {attempt + 1}/{max_retries}: {full_url}")
+                logger.info(f"[*] Request attempt {attempt + 1}/{max_retries}")
+                logger.debug(f"    URL: {full_url}")
+                logger.debug(f"    Timeout: {self.timeout}ms")
+                logger.debug(f"    Browser: Chromium (headless)")
 
                 # Create a new page for this request (better isolation)
                 page = self.context.new_page()
@@ -242,6 +245,7 @@ class MyAutoScraper:
                     # Navigate to URL with Playwright (executes JavaScript)
                     # Headers are inherited from context
                     # Use "load" instead of "networkidle" to avoid timeouts on heavy JS sites
+                    logger.debug(f"[*] Navigating with Playwright...")
                     response = page.goto(
                         full_url,
                         wait_until="load",
@@ -251,27 +255,57 @@ class MyAutoScraper:
                     self.last_request_time = time.time()
 
                     if response is None:
-                        logger.warning(f"[WARN] No response on attempt {attempt + 1}")
+                        logger.warning(f"[WARN] No response object returned on attempt {attempt + 1}")
                         if attempt < max_retries - 1:
-                            time.sleep(self.retry_delay)
+                            wait_time = self.retry_delay * (attempt + 1)
+                            logger.info(f"[*] Retrying in {wait_time}s...")
+                            time.sleep(wait_time)
                             continue
                         return None
 
                     status_code = response.status
                     html_content = page.content()
 
+                    # Log response details
+                    logger.info(f"[RESPONSE] Status: {status_code}")
+                    logger.debug(f"    HTML size: {len(html_content)} bytes")
+
+                    # Log response headers
+                    try:
+                        headers = response.headers
+                        logger.debug(f"    Response headers:")
+                        for key, value in headers.items():
+                            logger.debug(f"      {key}: {value}")
+                    except Exception as e:
+                        logger.debug(f"    Could not read headers: {e}")
+
+                    # Log first 300 chars of HTML for inspection
+                    html_snippet = html_content[:300].replace('\n', ' ').replace('\t', ' ')
+                    logger.debug(f"    HTML snippet: {html_snippet}...")
+
                     # Check status code
                     if status_code == 200:
-                        logger.debug(f"[OK] Response 200 OK")
+                        logger.info(f"[OK] Response 200 OK - Request successful")
                         return {"html": html_content, "status": status_code}
 
                     # Handle retryable error codes (403, 429, 5xx)
                     if status_code in [403, 429, 500, 502, 503, 504]:
+                        logger.warning(f"[WARN] Received status {status_code} - retryable error")
+
+                        # Log error page content for debugging
+                        if status_code == 403:
+                            logger.warning(f"[WARN] 403 Forbidden - possible bot detection")
+                            error_snippet = html_content[:200].replace('\n', ' ')
+                            logger.debug(f"    Error page snippet: {error_snippet}...")
+
                         if attempt < max_retries - 1:
                             wait_time = self.retry_delay * (attempt + 1)
-                            logger.info(f"[*] Status {status_code}: Waiting {wait_time}s before retry...")
+                            logger.info(f"[*] Retry {attempt + 2}/{max_retries} in {wait_time}s...")
                             time.sleep(wait_time)
                             continue
+                        else:
+                            logger.error(f"[ERROR] Max retries exceeded for status {status_code}")
+                            return None
 
                     # For other non-200 codes, log error
                     logger.warning(f"[WARN] Unexpected status {status_code}")
@@ -284,13 +318,17 @@ class MyAutoScraper:
                     page.close()
 
             except Exception as e:
-                logger.warning(f"[WARN] Error on attempt {attempt + 1}: {e}")
+                logger.warning(f"[WARN] Error on attempt {attempt + 1}: {type(e).__name__}: {e}")
+                import traceback
+                logger.debug(f"    Traceback: {traceback.format_exc()}")
                 if attempt < max_retries - 1:
-                    time.sleep(self.retry_delay)
+                    wait_time = self.retry_delay * (attempt + 1)
+                    logger.info(f"[*] Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
                     continue
                 return None
 
-        logger.error(f"[ERROR] Failed after {max_retries} attempts")
+        logger.error(f"[ERROR] Failed after {max_retries} attempts - giving up")
         return None
 
     def _parse_search_results(self, html: str, base_url: str) -> List[Dict]:

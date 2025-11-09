@@ -44,14 +44,21 @@ class DatabaseManager:
             # Minimal schema - only what LibSQL truly supports
             # Remove: UNIQUE, DEFAULT values, BOOLEAN type, and INDEXES
 
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS seen_listings (
-                    id TEXT PRIMARY KEY,
-                    created_at TEXT,
-                    last_notified_at TEXT,
-                    notified INTEGER
-                )
-            """)
+            logger.debug("[*] Creating seen_listings table...")
+            try:
+                self.client.execute("""
+                    CREATE TABLE IF NOT EXISTS seen_listings (
+                        id TEXT PRIMARY KEY,
+                        created_at TEXT,
+                        last_notified_at TEXT,
+                        notified INTEGER
+                    )
+                """)
+                logger.debug("[OK] seen_listings table created")
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to create seen_listings table: {e}")
+                logger.error(f"    Error type: {type(e).__name__}")
+                raise
 
             self.client.execute("""
                 CREATE TABLE IF NOT EXISTS vehicle_details (
@@ -156,15 +163,21 @@ class DatabaseManager:
         """
 
         try:
+            logger.debug(f"[*] Checking if listing {listing_id} has been seen...")
             result = self.client.execute(
                 "SELECT 1 FROM seen_listings WHERE id = ?",
                 [listing_id]
             )
 
-            return len(result) > 0
+            is_seen = len(result) > 0
+            logger.debug(f"[OK] Listing {listing_id} seen status: {is_seen}")
+            return is_seen
 
         except Exception as e:
-            logger.error(f"[ERROR] Error checking listing: {e}")
+            import traceback
+            logger.error(f"[ERROR] Error checking listing {listing_id}: {e}")
+            logger.error(f"    Error type: {type(e).__name__}")
+            logger.error(f"    Traceback: {traceback.format_exc()}")
             return False
 
     def store_listing(self, listing_data: dict) -> bool:
@@ -186,12 +199,19 @@ class DatabaseManager:
                 return False
 
             now = datetime.now().isoformat()
+            logger.debug(f"[*] Storing listing: {listing_id}")
 
             # Insert into seen_listings
-            self.client.execute(
-                "INSERT INTO seen_listings (id, created_at, notified) VALUES (?, ?, ?)",
-                [listing_id, now, 1]
-            )
+            logger.debug(f"[*] Inserting into seen_listings table...")
+            try:
+                self.client.execute(
+                    "INSERT INTO seen_listings (id, created_at, notified) VALUES (?, ?, ?)",
+                    [listing_id, now, 1]
+                )
+                logger.debug(f"[OK] seen_listings insert successful")
+            except Exception as e:
+                logger.error(f"[ERROR] seen_listings insert failed: {e}")
+                raise
 
             # Insert into vehicle_details
             vehicle = listing_data.get("vehicle", {})
@@ -201,49 +221,63 @@ class DatabaseManager:
             seller = listing_data.get("seller", {})
             media = listing_data.get("media", {})
 
-            self.client.execute("""
-                INSERT INTO vehicle_details (
-                    listing_id, make, make_id, model, model_id, modification, year, vin,
-                    body_type, color, interior_color, doors, seats, wheel_position, drive_type,
-                    fuel_type, fuel_type_id, displacement_liters, transmission, power_hp, cylinders,
-                    status, mileage_km, mileage_unit, customs_cleared, technical_inspection_passed,
-                    condition_description, price, currency, currency_id, negotiable,
-                    installment_available, exchange_possible, seller_type, seller_name, seller_phone,
-                    location, location_id, is_dealer, dealer_id, primary_image_url, photo_count,
-                    video_url, posted_date, last_updated, url, view_count, is_vip, is_featured
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                listing_id,
-                vehicle.get("make"), vehicle.get("make_id"),
-                vehicle.get("model"), vehicle.get("model_id"),
-                vehicle.get("modification"), vehicle.get("year"), vehicle.get("vin"),
-                vehicle.get("body_type"), vehicle.get("color"), vehicle.get("interior_color"),
-                vehicle.get("doors"), vehicle.get("seats"), vehicle.get("wheel_position"),
-                vehicle.get("drive_type"),
-                engine.get("fuel_type"), engine.get("fuel_type_id"),
-                engine.get("displacement_liters"), engine.get("transmission"),
-                engine.get("power_hp"), engine.get("cylinders"),
-                condition.get("status"), condition.get("mileage_km"),
-                condition.get("mileage_unit"), condition.get("customs_cleared"),
-                condition.get("technical_inspection_passed"), condition.get("condition_description"),
-                pricing.get("price"), pricing.get("currency"), pricing.get("currency_id"),
-                pricing.get("negotiable"), pricing.get("installment_available"),
-                pricing.get("exchange_possible"),
-                seller.get("seller_type"), seller.get("seller_name"), seller.get("seller_phone"),
-                seller.get("location"), seller.get("location_id"),
-                seller.get("is_dealer"), seller.get("dealer_id"),
-                media.get("primary_image_url"), media.get("photo_count"),
-                media.get("video_url"),
-                listing_data.get("posted_date"), listing_data.get("last_updated"),
-                listing_data.get("url"), listing_data.get("view_count"),
-                listing_data.get("is_vip"), listing_data.get("is_featured")
-            ])
+            logger.debug(f"[*] Preparing vehicle_details insert...")
+            logger.debug(f"    Vehicle: {vehicle}")
+            logger.debug(f"    Engine: {engine}")
+            logger.debug(f"    Pricing: {pricing}")
+
+            logger.debug(f"[*] Inserting into vehicle_details table (48 columns)...")
+            try:
+                self.client.execute("""
+                    INSERT INTO vehicle_details (
+                        listing_id, make, make_id, model, model_id, modification, year, vin,
+                        body_type, color, interior_color, doors, seats, wheel_position, drive_type,
+                        fuel_type, fuel_type_id, displacement_liters, transmission, power_hp, cylinders,
+                        status, mileage_km, mileage_unit, customs_cleared, technical_inspection_passed,
+                        condition_description, price, currency, currency_id, negotiable,
+                        installment_available, exchange_possible, seller_type, seller_name, seller_phone,
+                        location, location_id, is_dealer, dealer_id, primary_image_url, photo_count,
+                        video_url, posted_date, last_updated, url, view_count, is_vip, is_featured
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [
+                    listing_id,
+                    vehicle.get("make"), vehicle.get("make_id"),
+                    vehicle.get("model"), vehicle.get("model_id"),
+                    vehicle.get("modification"), vehicle.get("year"), vehicle.get("vin"),
+                    vehicle.get("body_type"), vehicle.get("color"), vehicle.get("interior_color"),
+                    vehicle.get("doors"), vehicle.get("seats"), vehicle.get("wheel_position"),
+                    vehicle.get("drive_type"),
+                    engine.get("fuel_type"), engine.get("fuel_type_id"),
+                    engine.get("displacement_liters"), engine.get("transmission"),
+                    engine.get("power_hp"), engine.get("cylinders"),
+                    condition.get("status"), condition.get("mileage_km"),
+                    condition.get("mileage_unit"), condition.get("customs_cleared"),
+                    condition.get("technical_inspection_passed"), condition.get("condition_description"),
+                    pricing.get("price"), pricing.get("currency"), pricing.get("currency_id"),
+                    pricing.get("negotiable"), pricing.get("installment_available"),
+                    pricing.get("exchange_possible"),
+                    seller.get("seller_type"), seller.get("seller_name"), seller.get("seller_phone"),
+                    seller.get("location"), seller.get("location_id"),
+                    seller.get("is_dealer"), seller.get("dealer_id"),
+                    media.get("primary_image_url"), media.get("photo_count"),
+                    media.get("video_url"),
+                    listing_data.get("posted_date"), listing_data.get("last_updated"),
+                    listing_data.get("url"), listing_data.get("view_count"),
+                    listing_data.get("is_vip"), listing_data.get("is_featured")
+                ])
+                logger.debug(f"[OK] vehicle_details insert successful")
+            except Exception as e:
+                logger.error(f"[ERROR] vehicle_details insert failed: {e}")
+                logger.error(f"    Error type: {type(e).__name__}")
+                raise
 
             logger.info(f"[OK] Stored listing: {listing_id}")
             return True
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to store listing: {e}")
+            import traceback
+            logger.error(f"[ERROR] Failed to store listing {listing_id}: {e}")
+            logger.error(f"    Full traceback: {traceback.format_exc()}")
             return False
 
     def get_recent_listings(self, days: int = 7, limit: int = 100) -> list:

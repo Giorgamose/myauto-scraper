@@ -1,0 +1,57 @@
+{
+  "search_configurations": [
+    {
+      "id": 1,
+      "name": "Toyota Land Cruiser Prado (1995-2008)",
+      "enabled": true,
+      "base_url": "https://www.myauto.ge/ka/s/iyideba-manqanebi-toyota-land-cruiser-land-cruiser-prado-1995-2008",
+      "parameters": {
+        "vehicleType": 0,
+        "bargainType": 0,
+        "mansNModels": "41.1109.1499",
+        "yearFrom": 1995,
+        "yearTo": 2008,
+        "priceFrom": 11000,
+        "priceTo": 18000,
+        "currId": 1,
+        "mileageType": 1,
+        "fuelTypes": 3,
+        "locations": "2.3.4.7.15.30.113.53.39.38.37.36.40.41.44.31.5.47.48.52.8.54.16.6.14.13.12.11.10.9.55.56.57.59.58.61.62.63.64.66.71.72.74.75.76.77.78.80.81.82.83.84.85.86.87.88.91.96.97.101.109.116.119.122.127.131.133.137.139.143",
+        "customs": 1
+      },
+      "notification_fields": [
+        "make",
+        "model",
+        "year",
+        "price",
+        "currency",
+        "mileage_km",
+        "fuel_type",
+        "transmission",
+        "location",
+        "posted_date",
+        "seller_name",
+        "url"
+      ]
+    }
+  ],
+  "scraper_settings": {
+    "request_timeout_seconds": 10,
+    "delay_between_requests_seconds": 2,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "max_retries": 3,
+    "retry_delay_seconds": 5
+  },
+  "notification_settings": {
+    "send_on_new_listings": true,
+    "send_heartbeat_on_no_listings": true,
+    "heartbeat_interval_minutes": 120,
+    "include_image": true,
+    "message_format": "html"
+  },
+  "database_settings": {
+    "retention_days": 365,
+    "auto_cleanup": true,
+    "cleanup_interval_runs": 10
+  }
+}

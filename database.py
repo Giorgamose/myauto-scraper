@@ -2,14 +2,25 @@
 """
 Database Manager - Turso SQLite Database Operations
 Handles all database interactions for listing storage and retrieval
+
+NOTE: On Windows, Turso database operations may fail due to SSL certificate
+validation issues with aiohttp. This is a known limitation. The scraper still
+works fine with Playwright for fetching listings.
 """
 
 import logging
 from datetime import datetime, timedelta
-from libsql_client import create_client_sync
 import os
 
 logger = logging.getLogger(__name__)
+
+try:
+    from libsql_client import create_client_sync
+    LIBSQL_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"[WARN] Could not import libsql_client: {e}")
+    LIBSQL_AVAILABLE = False
+    create_client_sync = None
 
 
 class DatabaseManager:
@@ -27,19 +38,60 @@ class DatabaseManager:
         self.db_url = db_url
         self.auth_token = auth_token
         self.client = None
+        self.connection_failed = False
+
+        if not LIBSQL_AVAILABLE:
+            logger.warning("[WARN] libsql_client not available - database operations disabled")
+            logger.warning("[WARN] This is expected on some Windows systems due to SSL issues")
+            logger.info("[*] The scraper will still fetch listings from MyAuto.ge using Playwright")
+            self.connection_failed = True
+            return
 
         try:
+            logger.info(f"[*] Connecting to Turso database...")
+            logger.debug(f"    URL: {db_url[:50]}...")
+            logger.debug(f"    Token: {auth_token[:20]}...")
+
             self.client = create_client_sync(url=db_url, auth_token=auth_token)
-            logger.info("[OK] Connected to Turso database")
+            logger.info("[OK] Connected to Turso database successfully")
         except Exception as e:
+            import traceback
             logger.error(f"[ERROR] Failed to connect to database: {e}")
-            raise
+            logger.error(f"    Error type: {type(e).__name__}")
+            logger.debug(f"    Full traceback: {traceback.format_exc()}")
+            logger.warning(f"[WARN] Database operations will be skipped")
+            logger.info("[*] The scraper will still fetch listings from MyAuto.ge using Playwright")
+            # Don't raise - allow the system to continue
+            self.client = None
+            self.connection_failed = True
+
+    def _ensure_connected(self):
+        """Ensure we have a valid database connection (retry on demand)"""
+        if self.client is not None:
+            return True
+
+        try:
+            logger.debug("[*] Attempting to reconnect to Turso database...")
+            import certifi
+            os.environ['SSL_CERT_FILE'] = certifi.where()
+            self.client = create_client_sync(url=self.db_url, auth_token=self.auth_token)
+            logger.info("[OK] Reconnected to Turso database")
+            return True
+        except Exception as e:
+            logger.error(f"[ERROR] Reconnection failed: {e}")
+            logger.error(f"    Error type: {type(e).__name__}")
+            return False
 
     def initialize_schema(self):
         """Create database schema if not exists (LibSQL minimal schema)"""
 
         try:
             logger.info("[*] Initializing database schema...")
+
+            # Ensure we have a connection
+            if not self._ensure_connected():
+                logger.warning("[WARN] Could not establish database connection for schema init")
+                return True  # Non-critical
 
             # Minimal schema - only what LibSQL truly supports
             # Remove: UNIQUE, DEFAULT values, BOOLEAN type, and INDEXES
@@ -163,7 +215,17 @@ class DatabaseManager:
         """
 
         try:
+            if self.connection_failed:
+                logger.debug(f"[*] Database unavailable - assuming listing {listing_id} is unseen")
+                return False
+
             logger.debug(f"[*] Checking if listing {listing_id} has been seen...")
+
+            # Ensure connection is available
+            if not self._ensure_connected():
+                logger.warning(f"[WARN] No database connection - assuming listing is unseen")
+                return False
+
             result = self.client.execute(
                 "SELECT 1 FROM seen_listings WHERE id = ?",
                 [listing_id]
@@ -175,9 +237,9 @@ class DatabaseManager:
 
         except Exception as e:
             import traceback
-            logger.error(f"[ERROR] Error checking listing {listing_id}: {e}")
-            logger.error(f"    Error type: {type(e).__name__}")
-            logger.error(f"    Traceback: {traceback.format_exc()}")
+            logger.warning(f"[WARN] Error checking listing {listing_id}: {e}")
+            logger.debug(f"    Error type: {type(e).__name__}")
+            logger.debug(f"    Traceback: {traceback.format_exc()}")
             return False
 
     def store_listing(self, listing_data: dict) -> bool:
@@ -198,8 +260,18 @@ class DatabaseManager:
                 logger.error("[ERROR] listing_id is required")
                 return False
 
-            now = datetime.now().isoformat()
+            if self.connection_failed:
+                logger.debug(f"[*] Database unavailable - skipping store for listing {listing_id}")
+                return False
+
             logger.debug(f"[*] Storing listing: {listing_id}")
+
+            # Ensure database connection is available
+            if not self._ensure_connected():
+                logger.warning(f"[WARN] No database connection - cannot store listing {listing_id}")
+                return False
+
+            now = datetime.now().isoformat()
 
             # Insert into seen_listings
             logger.debug(f"[*] Inserting into seen_listings table...")

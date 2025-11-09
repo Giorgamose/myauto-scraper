@@ -38,7 +38,7 @@ jobs:
 
       # 3. Cache pip dependencies for faster runs
       - name: Cache pip packages
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -53,7 +53,7 @@ jobs:
 
       # 5. Download previous database state from artifacts
       - name: Download previous database state
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: database-state
           path: ./artifacts/
@@ -99,7 +99,7 @@ jobs:
       # 9. Upload database state as artifact for next run
       - name: Upload database state
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: database-state
           path: ./artifacts/

@@ -86,31 +86,31 @@ class DatabaseManager:
         """Create database schema if not exists (LibSQL minimal schema)"""
 
         try:
+            if self.connection_failed:
+                logger.debug("[*] Database unavailable - skipping schema initialization")
+                return True
+
             logger.info("[*] Initializing database schema...")
 
             # Ensure we have a connection
             if not self._ensure_connected():
                 logger.warning("[WARN] Could not establish database connection for schema init")
+                self.connection_failed = True
                 return True  # Non-critical
 
             # Minimal schema - only what LibSQL truly supports
             # Remove: UNIQUE, DEFAULT values, BOOLEAN type, and INDEXES
 
             logger.debug("[*] Creating seen_listings table...")
-            try:
-                self.client.execute("""
-                    CREATE TABLE IF NOT EXISTS seen_listings (
-                        id TEXT PRIMARY KEY,
-                        created_at TEXT,
-                        last_notified_at TEXT,
-                        notified INTEGER
-                    )
-                """)
-                logger.debug("[OK] seen_listings table created")
-            except Exception as e:
-                logger.error(f"[ERROR] Failed to create seen_listings table: {e}")
-                logger.error(f"    Error type: {type(e).__name__}")
-                raise
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS seen_listings (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT,
+                    last_notified_at TEXT,
+                    notified INTEGER
+                )
+            """)
+            logger.debug("[OK] seen_listings table created")
 
             self.client.execute("""
                 CREATE TABLE IF NOT EXISTS vehicle_details (
@@ -199,9 +199,13 @@ class DatabaseManager:
             return True
 
         except Exception as e:
-            logger.warning(f"[WARN] Schema initialization failed (non-critical): {e}")
-            # Schema errors are non-fatal - the system can work without formal schema
-            return True
+            import traceback
+            logger.debug(f"[*] Schema initialization failed (setting database unavailable): {e}")
+            logger.debug(f"    Error type: {type(e).__name__}")
+            logger.debug(f"    Traceback: {traceback.format_exc()}")
+            # Mark database as unavailable and continue
+            self.connection_failed = True
+            return True  # Non-critical - system continues without database
 
     def has_seen_listing(self, listing_id: str) -> bool:
         """

@@ -53,7 +53,7 @@ class DatabaseManager:
 
             self.client.execute("""
                 CREATE TABLE IF NOT EXISTS vehicle_details (
-                    listing_id TEXT PRIMARY KEY REFERENCES seen_listings(id) ON DELETE CASCADE,
+                    listing_id TEXT PRIMARY KEY,
                     make TEXT,
                     make_id INTEGER,
                     model TEXT,
@@ -125,8 +125,8 @@ class DatabaseManager:
 
             self.client.execute("""
                 CREATE TABLE IF NOT EXISTS notifications_sent (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    listing_id TEXT REFERENCES seen_listings(id),
+                    id INTEGER PRIMARY KEY,
+                    listing_id TEXT,
                     notification_type TEXT,
                     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     telegram_message_id TEXT,

@@ -7,10 +7,14 @@ Handles fetching and parsing listings from MyAuto.ge
 import requests
 import logging
 import time
+import urllib3
 from typing import List, Dict, Optional, Any
 from bs4 import BeautifulSoup
 from parser import MyAutoParser
 from urllib.parse import urljoin, quote
+
+# Disable SSL warnings for Windows SSL verification issues
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +182,8 @@ class MyAutoScraper:
                     headers=self.headers,
                     params=params,
                     timeout=self.timeout,
-                    allow_redirects=True
+                    allow_redirects=True,
+                    verify=False
                 )
 
                 self.last_request_time = time.time()

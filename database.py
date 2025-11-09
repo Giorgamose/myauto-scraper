@@ -279,13 +279,13 @@ class DatabaseManager:
         try:
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
 
+            # Simple SELECT without JOIN (LibSQL doesn't support JOINs)
             result = self.client.execute(
-                f"""
-                SELECT sl.id, vd.*
-                FROM seen_listings sl
-                LEFT JOIN vehicle_details vd ON sl.id = vd.listing_id
-                WHERE sl.created_at > ?
-                ORDER BY sl.created_at DESC
+                """
+                SELECT id
+                FROM seen_listings
+                WHERE created_at > ?
+                ORDER BY created_at DESC
                 LIMIT ?
                 """,
                 [cutoff_date, limit]
@@ -399,13 +399,18 @@ class DatabaseManager:
             )
             total = total_result[0][0] if total_result else 0
 
+            # Calculate 24 hours ago (LibSQL doesn't support datetime() functions)
+            one_day_ago = (datetime.now() - timedelta(days=1)).isoformat()
+
             recent_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM seen_listings WHERE created_at > datetime('now', '-1 day')"
+                "SELECT COUNT(*) as count FROM seen_listings WHERE created_at > ?",
+                [one_day_ago]
             )
             recent = recent_result[0][0] if recent_result else 0
 
             notified_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM notifications_sent WHERE sent_at > datetime('now', '-1 day') AND success = 1"
+                "SELECT COUNT(*) as count FROM notifications_sent WHERE sent_at > ? AND success = 1",
+                [one_day_ago]
             )
             notified = notified_result[0][0] if notified_result else 0
 

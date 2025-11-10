@@ -50,7 +50,7 @@ Keep your token secure and store it safely, it can be used by anyone to control 
 ### ⚠️ IMPORTANT: Copy and save your bot token!
 
 ```
-TELEGRAM_BOT_TOKEN = "6123456789:ABCdefg1234567-HIJklmno_PQRstuvWXYZ"
+TELEGRAM_BOT_TOKEN = "8531271294:AAH7Od2UldndVviXAPxFXxxolqIjodW4BY4" // Actual one
 ```
 
 ---
@@ -65,7 +65,7 @@ Your "Chat ID" is your Telegram user ID. The bot needs this to know where to sen
 
 1. Update `test_telegram.py`:
    ```python
-   TELEGRAM_BOT_TOKEN = "YOUR_TOKEN_HERE"  # Paste token from Step 1
+   TELEGRAM_BOT_TOKEN = "8531271294:AAH7Od2UldndVviXAPxFXxxolqIjodW4BY4"  # Paste token from Step 1
    TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"  # Leave as is for now
    ```
 

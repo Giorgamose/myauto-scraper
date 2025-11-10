@@ -176,7 +176,7 @@ class CarListingMonitor:
             # Detect new listings
             new_listings = []
             for listing in listings:
-                listing_id = listing.get("id")
+                listing_id = listing.get("listing_id")
 
                 if listing_id and not self.database.has_seen_listing(listing_id):
                     new_listings.append(listing)

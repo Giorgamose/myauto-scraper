@@ -26,7 +26,11 @@
       "Bash(git hash-object:*)",
       "Bash(git rev-parse:*)",
       "Bash(git init:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(timeout 30 python:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(playwright install:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

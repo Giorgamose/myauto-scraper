@@ -3,17 +3,6 @@
 **Status:** Complete setup instructions before code implementation
 **Created:** November 9, 2025
 
----
-
-## ⚠️ SECURITY NOTICE
-
-**IMPORTANT:** You've shared your Meta Developer credentials in plain text.
-- Change your Meta password IMMEDIATELY
-- Never share credentials in plain text again
-- Use secured password managers for sensitive data
-- I will NOT log into any of your accounts - you'll do all setup yourself
-
----
 
 ## Part 1: Turso Database Setup
 

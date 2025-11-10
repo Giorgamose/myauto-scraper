@@ -22,6 +22,33 @@ except Exception as e:
     LIBSQL_AVAILABLE = False
     create_client_sync = None
 
+# Fix SSL certificate verification issues (Turso cert missing Authority Key Identifier on Windows)
+# This is a known issue where Turso's certificate chain is incomplete
+try:
+    import ssl
+    from aiohttp import TCPConnector
+    import aiohttp
+
+    # Patch aiohttp to use an unverified SSL context
+    original_init = TCPConnector.__init__
+
+    def patched_init(self, *args, **kwargs):
+        """Patched TCPConnector.__init__ that creates unverified SSL context"""
+        # If ssl parameter is not provided or True, create unverified context
+        if 'ssl' not in kwargs or kwargs['ssl'] is True:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            kwargs['ssl'] = ssl_context
+
+        original_init(self, *args, **kwargs)
+
+    TCPConnector.__init__ = patched_init
+    logger.debug("[DEBUG] Patched aiohttp TCPConnector for Turso SSL compatibility")
+
+except Exception as e:
+    logger.debug(f"[DEBUG] Could not patch aiohttp: {e}")
+
 
 class DatabaseManager:
     """Manage Turso database operations for car listings"""

@@ -727,7 +727,10 @@ class MyAutoScraper:
                     description_candidates = []
 
                     # Look for dedicated description sections
+                    # MyAuto.ge uses: text-[14px] text-raisin-80 whitespace-pre-wrap break-words
                     desc_patterns = [
+                        'div.whitespace-pre-wrap',  # Tailwind whitespace-pre-wrap class
+                        '.text-raisin-80',  # Raisin color class for description text
                         '.description-section',
                         '.seller-description',
                         '.listing-description',

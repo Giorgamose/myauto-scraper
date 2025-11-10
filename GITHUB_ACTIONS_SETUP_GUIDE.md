@@ -29,22 +29,18 @@ GitHub Actions needs your credentials securely stored as **Secrets**.
 4. Click the green **New repository secret** button
 5. Add each secret with the exact names below:
 
-### Required Secrets:
+### Required Secrets for GitHub Actions:
 
-Add these secrets to GitHub (copy from your `.env.local` file):
+Add these 3 secrets to GitHub:
 
 | Secret Name | Value | Where to Find |
 |---|---|---|
-| `SUPABASE_URL` | Your Supabase project URL | `.env.local`: `SUPABASE_URL=` |
-| `SUPABASE_API_KEY` | Your Supabase API key | `.env.local`: `SUPABASE_API_KEY=` |
-| `TELEGRAM_BOT_TOKEN` | Your bot token from BotFather | `.env.local`: `TELEGRAM_BOT_TOKEN=` |
-| `TELEGRAM_CHAT_ID` | Your Telegram chat ID | `.env.local`: `TELEGRAM_CHAT_ID=` |
+| `SUPABASE_URL` | Your Supabase project URL | https://app.supabase.com → Settings → API → Project URL |
+| `SUPABASE_API_KEY` | Your Supabase API key | https://app.supabase.com → Settings → API → anon key |
+| `TELEGRAM_BOT_TOKEN` | Your bot token | @BotFather on Telegram |
+| `TELEGRAM_NOTIFICATION_CHANNEL_ID` | **Your Telegram chat ID** | @userinfobot on Telegram |
 
-### Optional Secrets:
-
-| Secret Name | Value | Purpose |
-|---|---|---|
-| `TELEGRAM_NOTIFICATION_CHANNEL_ID` | Your Telegram channel ID | Send all notifications to a channel instead of individual chats |
+**Note:** For GitHub Actions, `TELEGRAM_NOTIFICATION_CHANNEL_ID` is the destination for notifications. Use your personal Telegram chat ID here (same value as `TELEGRAM_CHAT_ID` in your local `.env.local`).
 
 **⚠️ IMPORTANT:**
 - Never commit `.env.local` to Git (it's in `.gitignore`)
@@ -61,29 +57,35 @@ Add these secrets to GitHub (copy from your `.env.local` file):
 5. Add secret
 ```
 
-## Step 1.5: Optional - Configure Channel Notifications
+## Step 1.5: Understanding TELEGRAM_NOTIFICATION_CHANNEL_ID
 
-If you want all periodic search results sent to a **Telegram channel** instead of individual chats:
+The name might be confusing - it's not just for channels! Here's what it actually does:
 
-### Get Your Channel ID:
+### What is TELEGRAM_NOTIFICATION_CHANNEL_ID?
 
-1. Create a Telegram channel (if you don't have one)
-2. Add your bot as an admin to the channel
-3. Send any message to the channel
-4. Open Telegram and go to **@userinfobot**
-5. Send `/start` to the bot
-6. Forward the message from your channel to @userinfobot
-7. The bot will show your channel ID (format: `-100xxxxxxxxxx`)
-8. Add this as a secret: `TELEGRAM_NOTIFICATION_CHANNEL_ID`
+It's the **destination where periodic notifications are sent**. It can be:
+- ✅ Your personal Telegram chat ID (recommended for personal use)
+- ✅ A Telegram group chat ID (for team use)
+- ✅ A Telegram channel ID (for broadcast use)
 
-### Why Use a Channel?
+### Recommended Setup for Personal Use
 
-| Aspect | Individual Chat | Channel |
-|--------|---|---|
-| Notifications go to | Each user separately | One shared channel |
-| Setup | Simple | Need channel admin |
-| Visibility | Private to each user | Public/shared |
-| Best for | Personal monitoring | Team/shared monitoring |
+1. Use your **personal Telegram chat ID** (get from @userinfobot)
+2. Add it to GitHub Actions secret: `TELEGRAM_NOTIFICATION_CHANNEL_ID`
+3. All periodic notifications go to your personal chat
+4. **No need for separate channel!**
+
+### Optional: Use a Real Telegram Channel
+
+Only do this if you want to centralize notifications:
+
+1. Create a Telegram channel (@NewChannel)
+2. Add your bot as admin
+3. Get the channel ID:
+   - Send message in channel
+   - Forward to @userinfobot
+   - Copy the channel ID (format: `-100xxxxxxxxxx`)
+4. Use this as `TELEGRAM_NOTIFICATION_CHANNEL_ID`
 
 ## Step 2: Enable GitHub Actions
 

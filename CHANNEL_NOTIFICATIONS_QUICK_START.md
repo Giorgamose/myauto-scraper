@@ -1,88 +1,81 @@
-# Channel Notifications - Quick Start Guide
+# Telegram Notifications Setup - Quick Start
 
-## What's New?
+## Simple Setup (Recommended for Personal Use)
 
-The bot now supports sending all periodic search results to a Telegram **channel** instead of individual user chats. Perfect for team monitoring!
+The simplest way to use GitHub Actions is to send notifications to **your personal Telegram chat**.
 
-## How to Set Up Channel Notifications
-
-### Step 1: Create/Prepare Your Channel
-
-1. Open Telegram
-2. Create a new channel (or use existing one)
-3. Name it something like: `@CarSearchResults` or `MyAuto Listings`
-4. Make it private or public (your choice)
-
-### Step 2: Add Your Bot as Admin
-
-1. Go to your channel
-2. Click channel name → **Members** → **Add member**
-3. Search for your bot (the one you created with @BotFather)
-4. Add it and make it an **Admin**
-
-### Step 3: Get Your Channel ID
+### Step 1: Get Your Telegram Chat ID
 
 1. Open Telegram
 2. Go to **@userinfobot**
-3. Send `/start` to see your personal chat ID
-4. Go back to your channel
-5. Send any message in the channel
-6. Go to **@userinfobot** → Forward the message from your channel
-7. The bot will reply with your **channel ID** (looks like: `-100123456789`)
+3. Send `/start`
+4. The bot will show you your chat ID (looks like: `1234567890`)
+5. Copy this ID
 
-### Step 4: Add Channel ID to GitHub Actions
+### Step 2: Add to GitHub Actions
 
-1. Go to your GitHub repo: https://github.com/Giorgamose/myauto-scraper
+1. Go to your repository: https://github.com/Giorgamose/myauto-scraper
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret**
 4. **Name:** `TELEGRAM_NOTIFICATION_CHANNEL_ID`
-5. **Value:** Your channel ID from Step 3 (e.g., `-100123456789`)
+5. **Value:** Your chat ID from Step 1 (just the number, e.g., `1234567890`)
 6. Click **Add secret**
 
-### Step 5: Test It
+### Step 3: Test It
 
 1. Go to **Actions** tab
 2. Click **Telegram Bot - Continuous Monitoring**
 3. Click **Run workflow** button
-4. Wait for execution to complete
-5. Check your channel for notifications!
+4. Check your Telegram personal chat for results!
+
+---
+
+## Advanced Setup (For Teams or Channels)
+
+If you want to send to a **Telegram channel** or **group chat** instead:
+
+### For Telegram Channels:
+
+1. Create a channel (e.g., `@CarSearchResults`)
+2. Add your bot as admin
+3. Send a message in the channel
+4. Go to **@userinfobot** → Forward the channel message
+5. Copy the channel ID (format: `-100xxxxxxxxxxxxx`)
+6. Add to GitHub Actions as `TELEGRAM_NOTIFICATION_CHANNEL_ID`
+
+### For Telegram Group Chats:
+
+1. Create a group with your bot
+2. Add your bot to the group
+3. Forward any group message to **@userinfobot**
+4. Copy the group ID (usually negative number like `-1234567890`)
+5. Add to GitHub Actions as `TELEGRAM_NOTIFICATION_CHANNEL_ID`
+
+---
+
+## Configuration Summary
+
+| Setup Type | Value Type | Where Notifications Go |
+|---|---|---|
+| **Personal Chat** (Simple) | Chat ID (e.g., `1234567890`) | Your personal Telegram chat |
+| **Group Chat** | Group ID (e.g., `-1234567890`) | Shared group with others |
+| **Channel** (Broadcast) | Channel ID (e.g., `-100xxxxx`) | Public/private Telegram channel |
+
+---
 
 ## How It Works
 
-### Before (Individual Chat)
 ```
-Bot → User1's Chat (notification)
-Bot → User2's Chat (notification)
-Bot → User3's Chat (notification)
+GitHub Actions (every 15 min)
+  ↓
+  Checks MyAuto.ge for new listings
+  ↓
+  Finds new listings matching subscriptions
+  ↓
+  Sends notification to TELEGRAM_NOTIFICATION_CHANNEL_ID
+  ↓
+  You see it in Telegram!
 ```
-
-### After (Channel)
-```
-Bot → Shared Channel (all notifications aggregated)
-       ↓
-     User1 sees
-     User2 sees
-     User3 sees
-```
-
-## Configuration Examples
-
-### Local Testing (.env.local)
-
-**Option 1: Individual Notifications (Default)**
-```bash
-# Don't set this variable, or leave it empty
-TELEGRAM_NOTIFICATION_CHANNEL_ID=
-```
-
-**Option 2: Send to Channel**
-```bash
-TELEGRAM_NOTIFICATION_CHANNEL_ID=-100123456789
-```
-
-### GitHub Actions
-
-Just add the secret and it will automatically be used!
 
 ## Switching Back to Individual Notifications
 

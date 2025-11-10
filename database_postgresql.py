@@ -7,6 +7,7 @@ Handles all database interactions for listing storage and retrieval
 import logging
 from datetime import datetime, timedelta
 import os
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,46 @@ try:
 except Exception as e:
     logger.warning(f"[WARN] Could not import psycopg2: {e}")
     PSYCOPG2_AVAILABLE = False
+
+
+def _resolve_ipv4_host(hostname: str) -> str:
+    """
+    Resolve hostname to IPv4 address, preferring IPv4 over IPv6.
+    This is critical for GitHub Actions environments where IPv6 connectivity is limited.
+
+    Args:
+        hostname: The hostname to resolve
+
+    Returns:
+        IPv4 address or original hostname if resolution fails
+    """
+    if not hostname:
+        return hostname
+
+    try:
+        # Get all address info for the hostname
+        all_results = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+
+        ipv4_results = [res for res in all_results if res[0] == socket.AF_INET]
+        ipv6_results = [res for res in all_results if res[0] == socket.AF_INET6]
+
+        # Log what we found
+        if ipv4_results:
+            ipv4_addr = ipv4_results[0][4][0]
+            logger.info(f"[*] Resolved {hostname} to IPv4: {ipv4_addr}")
+            return ipv4_addr
+        elif ipv6_results:
+            ipv6_addr = ipv6_results[0][4][0]
+            logger.warning(f"[WARN] Only IPv6 available for {hostname}: {ipv6_addr}")
+            logger.warning(f"[WARN] GitHub Actions may not support this IPv6 address. Connection may fail.")
+            return ipv6_addr
+        else:
+            logger.warning(f"[WARN] Could not resolve {hostname} to any address")
+            return hostname
+
+    except socket.gaierror as e:
+        logger.error(f"[ERROR] Failed to resolve {hostname}: {e}")
+        return hostname
 
 
 class DatabaseManager:
@@ -48,12 +89,17 @@ class DatabaseManager:
 
         try:
             logger.info("[*] Connecting to Supabase PostgreSQL database...")
+            # Resolve hostname to IPv4 to avoid connectivity issues in GitHub Actions
+            ipv4_host = _resolve_ipv4_host(self.host) if self.host else self.host
+            logger.debug(f"[*] Resolved host {self.host} to {ipv4_host}")
+
             self.conn = psycopg2.connect(
                 user=self.user,
                 password=self.password,
-                host=self.host,
+                host=ipv4_host,
                 port=self.port,
-                dbname=self.dbname
+                dbname=self.dbname,
+                connect_timeout=10
             )
             logger.info("[OK] Connected to Supabase database successfully")
         except Exception as e:
@@ -91,8 +137,8 @@ class DatabaseManager:
         """Create database schema if not exists"""
         try:
             if self.connection_failed:
-                logger.debug("[*] Database unavailable")
-                return True
+                logger.error("[ERROR] Database connection failed - schema initialization skipped")
+                return False
 
             logger.info("[*] Initializing database schema...")
 
@@ -124,9 +170,9 @@ class DatabaseManager:
             return True
 
         except Exception as e:
-            logger.debug(f"[*] Schema init error: {e}")
+            logger.error(f"[ERROR] Schema initialization failed: {e}")
             self.connection_failed = True
-            return True
+            return False
 
     def has_seen_listing(self, listing_id: str) -> bool:
         """Check if listing ID has been seen before"""

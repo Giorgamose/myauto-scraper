@@ -34,7 +34,7 @@ from utils import (
     get_log_level,
 )
 
-from database import DatabaseManager
+from database_rest_api import DatabaseManager  # Using REST API instead of direct PostgreSQL
 from scraper import MyAutoScraper
 from parser import MyAutoParser
 from notifications import NotificationManager
@@ -93,11 +93,16 @@ class CarListingMonitor:
                 logger.error("[ERROR] Configuration validation failed")
                 return False
 
-            # 3. Initialize database
+            # 3. Initialize database (using Supabase REST API)
             logger.info("[*] Initializing database connection...")
             try:
                 self.database = DatabaseManager()
-                self.database.initialize_schema()
+                if self.database.connection_failed:
+                    logger.error("[ERROR] Failed to initialize database: connection failed")
+                    return False
+                if not self.database.initialize_schema():
+                    logger.error("[ERROR] Failed to initialize database schema")
+                    return False
                 logger.info("[OK] Database initialized")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to initialize database: {e}")

@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
-import sys, os
+"""Test Supabase REST API connection"""
+import sys
+import os
 from dotenv import load_dotenv
+
 load_dotenv('.env.local')
+load_dotenv('.env')
 
-print('[*] Testing Supabase database connection...')
-print(f"[*] Using host: {os.getenv('DB_HOST')}")
-print(f"[*] Using user: {os.getenv('DB_USER')}")
-print(f"[*] Using port: {os.getenv('DB_PORT')}")
+print('[*] Testing Supabase REST API connection...')
+print(f"[*] Using Supabase URL: {os.getenv('SUPABASE_URL')}")
+print(f"[*] Using API Key: {os.getenv('SUPABASE_API_KEY')[:20]}...")
 
-from database import DatabaseManager
+from database_rest_api import DatabaseManager
 
 # DatabaseManager will automatically load from environment variables:
-# DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
+# SUPABASE_URL, SUPABASE_API_KEY
 db = DatabaseManager()
 
-if db.conn:
-    result = db._execute('SELECT 1 as test')
-    print(f'[OK] Connection successful!')
-    print(f'[OK] Query result: {result}')
-else:
-    print(f'[ERROR] Failed to connect to database')
+if db.connection_failed:
+    print('[ERROR] Failed to connect to Supabase REST API')
+    sys.exit(1)
+
+# Test basic connectivity
+try:
+    stats = db.get_statistics()
+    print('[OK] Connection successful!')
+    print(f'[OK] Database Statistics: {stats}')
+except Exception as e:
+    print(f'[ERROR] Failed to query database: {e}')
     sys.exit(1)

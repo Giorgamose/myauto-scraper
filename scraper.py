@@ -638,12 +638,111 @@ class MyAutoScraper:
                 customs_text = soup.get_text().lower()
                 listing_data["condition"]["customs_cleared"] = "customs" in customs_text and "cleared" in customs_text
 
+            # FALLBACK: Extract price if not found yet
+            if not listing_data["pricing"].get("price"):
+                # Look for price patterns: "12 000 $" or "₾ 12000" or similar
+                full_text = soup.get_text()
+                import re
+
+                # Try common price patterns
+                price_patterns = [
+                    r'(\d{1,3}(?:\s\d{3})*)\s*\$',  # "12 000 $"
+                    r'(\d{1,3}(?:\s\d{3})*)\s*USD',  # "12 000 USD"
+                    r'₾\s*(\d{1,3}(?:\s\d{3})*)',  # "₾ 12000"
+                    r'(\d{1,3}(?:,\d{3})*)\s*₾',  # "12,000 ₾"
+                ]
+
+                for pattern in price_patterns:
+                    matches = re.findall(pattern, full_text)
+                    if matches:
+                        # Take first match and clean it
+                        price_str = matches[0].replace(' ', '').replace(',', '')
+                        if price_str and price_str.isdigit() and len(price_str) > 2:
+                            listing_data["pricing"]["price"] = price_str
+                            logger.debug(f"[FALLBACK] Extracted price: {price_str}")
+                            # Determine currency from context
+                            if '$' in full_text[:full_text.find(matches[0]) + 200]:
+                                listing_data["pricing"]["currency"] = "USD"
+                                listing_data["pricing"]["currency_id"] = 1
+                            elif '₾' in full_text[:full_text.find(matches[0]) + 200]:
+                                listing_data["pricing"]["currency"] = "GEL"
+                                listing_data["pricing"]["currency_id"] = 2
+                            else:
+                                listing_data["pricing"]["currency"] = "USD"
+                                listing_data["pricing"]["currency_id"] = 1
+                            break
+
+            # FALLBACK: Extract location if not found yet
+            if not listing_data["seller"].get("location"):
+                # Look for Georgian city names
+                full_text = soup.get_text()
+                georgian_cities = {
+                    'თბილისი': 'Tbilisi',
+                    'ბათუმი': 'Batumi',
+                    'ქუთაისი': 'Kutaisi',
+                    'გორი': 'Gori',
+                    'ზუგდიდი': 'Zugdidi',
+                    'სამტრედია': 'Samtredia',
+                    'ჯავახეთი': 'Javakheti',
+                    'წაწკერი': 'Tsagkeri',
+                }
+
+                for georgian_city, english_city in georgian_cities.items():
+                    if georgian_city in full_text:
+                        # Verify it's in a sensible context (not in title or very early)
+                        first_occurrence = full_text.find(georgian_city)
+                        if first_occurrence > 100:  # Skip early occurrences
+                            listing_data["seller"]["location"] = georgian_city
+                            logger.debug(f"[FALLBACK] Extracted location: {georgian_city}")
+                            break
+
+            # FALLBACK: Extract seller_name if not found yet
+            if not listing_data["seller"].get("seller_name"):
+                # Look for seller name patterns - usually after "გამყიდველი:" or similar
+                # For now, just mark as unknown if not found
+                logger.debug("[*] Seller name not found in extraction")
+
             # Extract description
             if not listing_data.get("description"):
                 description = MyAutoParser.extract_text(
                     soup,
                     ".description, .listing-description, [data-description]"
                 )
+                if not description:
+                    # FALLBACK: Look for longer text blocks that might be descriptions
+                    # Look for paragraphs or divs with substantial text content
+                    all_text = soup.get_text()
+
+                    # Try to find description-like text blocks
+                    # Usually descriptions are Georgian text blocks with length > 30 chars
+                    import re
+
+                    # Look for paragraphs/divs that contain description text
+                    for elem in soup.find_all(['p', 'div', 'span']):
+                        text = elem.get_text(strip=True)
+
+                        # Check if this looks like a description
+                        # Should be: Georgian text, reasonable length, multiple words, not metadata
+                        if (len(text) > 100 and len(text) < 500 and
+                            any('\u10A0' <= c <= '\u10FF' for c in text) and  # Has Georgian
+                            (';' in text or ',' in text)):  # Contains punctuation (typical of descriptions)
+
+                            # Make sure it's not metadata or specs
+                            # Metadata typically has lots of numbers, units, slashes
+                            num_count = sum(1 for c in text if c.isdigit())
+                            slash_count = text.count('/')
+                            if num_count < len(text) * 0.3 and slash_count < 3:  # Not too many numbers/slashes
+                                # Make sure it's not a known label or field
+                                known_patterns = [
+                                    'მწარმოებელი', 'მოდელი', 'წელი', 'გარბენი',
+                                    'საწვავის', 'კოლოფი', 'ძრავი', 'დისკი',
+                                    'შენახვა', 'შედარება', 'მიბმა', 'ნახვა'
+                                ]
+                                if not any(label in text[:100] for label in known_patterns):
+                                    description = text
+                                    logger.debug(f"[FALLBACK] Extracted description: {text[:100]}...")
+                                    break
+
                 if description:
                     listing_data["description"] = {
                         "text": description,

@@ -512,6 +512,8 @@ class MyAutoParser:
                 'ტექ. დათვალიერება': 'technical_inspection_passed',
                 'კატალიზატორი': 'has_catalytic_converter',
                 'გაცვლა': 'exchange_possible',
+                'მდებარეობა': 'location',
+                'გამყიდველი': 'seller_name',
             }
 
             # STRATEGY 1: For each Georgian label, find it in the page and extract the value
@@ -529,23 +531,34 @@ class MyAutoParser:
                         # If the text contains both label and value separated by colon
                         if ':' in text:
                             parts = text.split(':', 1)
-                            if len(parts) == 2:
+                            if len(parts) == 2 and label_text in parts[0]:
                                 value = parts[1].strip()
-                                # Verify label is actually this label
-                                if label_text in parts[0]:
-                                    # Keep only reasonable-length values
-                                    if value and len(value) < 100:
-                                        # Extract number if needed
-                                        if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
-                                            match = re.search(r'\d+\.?\d*', value)
-                                            if match:
-                                                data[field_name] = match.group(0)
-                                        else:
-                                            data[field_name] = value
 
-                                        logger.debug(f"[OK] Extracted {field_name}: {value}")
-                                        found = True
-                                        break
+                                # Stop at the next Georgian label in the value
+                                # All Georgian letters are in range \u10A0-\u10FF
+                                georgian_label_pattern = r'[ა-ჩ][ა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩა-ჩา-ჩა-ჩ'
+                                # Simpler: look for pattern like "word:" which indicates next label
+                                if ':' in value:
+                                    # Extract only up to the colon
+                                    value = value.split(':')[0].strip()
+
+                                # Keep only reasonable-length values
+                                if value and len(value) < 100:
+                                    # Clean up: remove trailing/leading spaces and numbers-only check
+                                    value_clean = value.strip()
+
+                                    # Extract number if needed
+                                    if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
+                                        match = re.search(r'\d+\.?\d*', value_clean)
+                                        if match:
+                                            data[field_name] = match.group(0)
+                                            logger.debug(f"[OK] Extracted {field_name}: {match.group(0)}")
+                                    else:
+                                        data[field_name] = value_clean
+                                        logger.debug(f"[OK] Extracted {field_name}: {value_clean}")
+
+                                    found = True
+                                    break
                         else:
                             # Label without immediate value - try to get from next sibling
                             parent = elem.parent
@@ -559,6 +572,14 @@ class MyAutoParser:
                                         next_text = str(next_elem).strip()
 
                                     if next_text and len(next_text) < 100 and not next_text.startswith(('<', '>')):
+                                        # Stop if we encounter another Georgian label pattern
+                                        if ':' in next_text and len(next_text.split(':')[0]) < 30:
+                                            # This looks like a label:value, extract only value
+                                            next_text = next_text.split(':')[-1].strip()
+                                            if not next_text:
+                                                next_elem = next_elem.next_sibling if hasattr(next_elem, 'next_sibling') else None
+                                                continue
+
                                         # Extract number if needed
                                         if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
                                             match = re.search(r'\d+\.?\d*', next_text)
@@ -606,6 +627,34 @@ class MyAutoParser:
                                 break
                     if 'fuel_type' in data:
                         break
+
+            # STRATEGY 3: Extract description if available
+            # Description is usually in a dedicated description section
+            if 'description' not in data:
+                # Try to find description in common locations
+                desc_selectors = ['.description', '.listing-description', '[data-description]', '.vehicle-description']
+                for selector in desc_selectors:
+                    desc_elem = soup.select_one(selector)
+                    if desc_elem:
+                        description_text = desc_elem.get_text(strip=True)
+                        if description_text and len(description_text) > 10:  # Min length for valid description
+                            data['description'] = description_text
+                            logger.debug(f"[OK] Extracted description: {description_text[:100]}...")
+                            break
+
+                # If not found via selectors, try to find large text blocks that look like descriptions
+                if 'description' not in data:
+                    for elem in soup.find_all(string=True):
+                        text = str(elem).strip()
+                        # Look for Georgian text that's longer than other fields (likely description)
+                        if len(text) > 50 and len(text) < 1000 and text.count(' ') > 3:
+                            # Check if it looks like a description (has Georgian letters and some length)
+                            if any('\u10A0' <= c <= '\u10FF' for c in text):  # Contains Georgian
+                                # Make sure it's not a label or common field
+                                if ':' not in text and ',' not in text[:20]:  # Not label format
+                                    data['description'] = text
+                                    logger.debug(f"[OK] Extracted description from text block: {text[:100]}...")
+                                    break
 
             return data if data else None
 

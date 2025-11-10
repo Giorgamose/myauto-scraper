@@ -350,6 +350,9 @@ class DatabaseManager:
                 "photo_count": to_str(media.get("photo_count")),
                 "video_url": to_str(media.get("video_url")),
 
+                # Description
+                "description": to_str(listing_data.get("description") if isinstance(listing_data.get("description"), str) else listing_data.get("description", {}).get("text") if isinstance(listing_data.get("description"), dict) else None),
+
                 # Metadata
                 "posted_date": to_str(listing_data.get("posted_date")),
                 "last_updated": to_str(listing_data.get("last_updated")),

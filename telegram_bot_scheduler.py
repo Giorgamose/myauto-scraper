@@ -334,10 +334,10 @@ class TelegramBotScheduler(threading.Thread):
 
         price = listing.get("price", "N/A")
         mileage = listing.get("mileage_km", "N/A")
-        location = listing.get("location", "N/A")
-        fuel_type = listing.get("fuel_type", "")
-        transmission = listing.get("transmission", "")
-        url = listing.get("url", "")
+        location = listing.get("location") or "N/A"
+        fuel_type = (listing.get("fuel_type") or "").strip()
+        transmission = (listing.get("transmission") or "").strip()
+        url = listing.get("url") or ""
 
         # Format price
         if isinstance(price, (int, float)):
@@ -435,10 +435,11 @@ class TelegramBotScheduler(threading.Thread):
                     mileage_str = 'N/A'
 
             # Get optional fields with proper None handling (use empty string, not 'N/A')
-            location = listing.get("location", "").strip()
-            fuel_type = listing.get("fuel_type", "").strip() if listing.get("fuel_type") else ""
-            transmission = listing.get("transmission", "").strip() if listing.get("transmission") else ""
-            url = listing.get("url", "")
+            # Use (value or "") to handle both missing keys and None values
+            location = (listing.get("location") or "").strip()
+            fuel_type = (listing.get("fuel_type") or "").strip()
+            transmission = (listing.get("transmission") or "").strip()
+            url = listing.get("url") or ""
 
             # Ensure URL is complete
             if url and not url.startswith("http"):

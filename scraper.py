@@ -551,13 +551,101 @@ class MyAutoScraper:
 
             # Extract price (if not already from React)
             if not listing_data["pricing"].get("price"):
-                price_text = MyAutoParser.extract_text(soup, ".price, .listing-price, [data-price]")
+                # Try to find the main price element using Tailwind classes
+                # MyAuto.ge uses: <p class="...text-[24px]...text-raisin-100...">12,500</p>
+                price_selectors = [
+                    'p[class*="text-[24px]"], p[class*="text-raisin-100"]',  # Tailwind main price
+                    '.price, .listing-price, [data-price]',  # Common selectors
+                    'p[class*="font-bold"]'  # Bold price text
+                ]
+
+                price_text = None
+                for selector in price_selectors:
+                    price_text = MyAutoParser.extract_text(soup, selector)
+                    if price_text:
+                        break
+
                 if price_text:
                     price_data = MyAutoParser.normalize_price(price_text)
                     if price_data:
                         listing_data["pricing"]["price"] = price_data.get("price")
                         listing_data["pricing"]["currency"] = price_data.get("currency")
                         listing_data["pricing"]["currency_id"] = {"USD": 1, "GEL": 2, "EUR": 3}.get(price_data.get("currency"), 1)
+
+                # Additionally extract both GEL and USD prices from the page
+                # Store them separately for telegram notifications
+                full_text = soup.get_text()
+                import re
+
+                all_prices = {}  # {amount: {'value': str, 'currency': str}}
+
+                # Find all prices with $ or USD (these are USD)
+                for match in re.finditer(r'(\d{1,3}(?:[,\s]\d{3})+|\d{4,7})\s*(?:\$|USD)', full_text, re.IGNORECASE):
+                    price_raw = match.group(1)
+                    price_clean = price_raw.replace(' ', '').replace(',', '')
+                    if price_clean.isdigit():
+                        amount = int(price_clean)
+                        if 5000 < amount < 500000:  # USD range
+                            if amount not in all_prices:
+                                all_prices[amount] = {'value': price_raw, 'currency': 'USD'}
+
+                # Find all prices with ₾ or GEL (these are GEL)
+                for match in re.finditer(r'(\d{1,3}(?:[,\s]\d{3})+|\d{4,7})\s*(?:₾|GEL)', full_text, re.IGNORECASE):
+                    price_raw = match.group(1)
+                    price_clean = price_raw.replace(' ', '').replace(',', '')
+                    if price_clean.isdigit():
+                        amount = int(price_clean)
+                        if 20000 < amount < 2000000:  # GEL range
+                            if amount not in all_prices:
+                                all_prices[amount] = {'value': price_raw, 'currency': 'GEL'}
+
+                # Find all numbers in valid price range and apply logic: lowest = USD
+                for match in re.finditer(r'\b(\d{4,7})\b', full_text):
+                    price_raw = match.group(1)
+                    amount = int(price_raw)
+
+                    if 5000 < amount < 500000 and amount not in all_prices:
+                        # Determine if this is likely USD or GEL
+                        # Get surrounding context
+                        context_start = max(0, match.start() - 100)
+                        context_end = min(len(full_text), match.end() + 100)
+                        context = full_text[context_start:context_end].lower()
+
+                        if '$' in context or 'usd' in context:
+                            all_prices[amount] = {'value': price_raw, 'currency': 'USD'}
+                        elif '₾' in context or 'gel' in context:
+                            all_prices[amount] = {'value': price_raw, 'currency': 'GEL'}
+
+                # Store both USD and GEL prices for telegram
+                if all_prices:
+                    usd_prices = [p for p in all_prices.values() if p['currency'] == 'USD']
+                    gel_prices = [p for p in all_prices.values() if p['currency'] == 'GEL']
+
+                    # If we have both, validate with exchange rate logic (1 USD = 2.72 GEL)
+                    if usd_prices and gel_prices and not listing_data["pricing"].get("price"):
+                        usd_amount = min(int(p['value'].replace(',', '').replace(' ', '')) for p in usd_prices)
+                        gel_amount = max(int(p['value'].replace(',', '').replace(' ', '')) for p in gel_prices)
+
+                        # Validate exchange rate (GEL should be ~2.5-3x USD)
+                        if 2.0 < gel_amount / usd_amount < 3.5:
+                            listing_data["pricing"]["price_usd"] = str(usd_amount)
+                            listing_data["pricing"]["price_gel"] = str(gel_amount)
+                            listing_data["pricing"]["price"] = str(usd_amount)  # Primary price is USD
+                            listing_data["pricing"]["currency"] = "USD"
+                            listing_data["pricing"]["currency_id"] = 1
+                            logger.debug(f"[PRICE] Found both: USD {usd_amount}, GEL {gel_amount}")
+                    elif usd_prices and not listing_data["pricing"].get("price"):
+                        usd_amount = min(int(p['value'].replace(',', '').replace(' ', '')) for p in usd_prices)
+                        listing_data["pricing"]["price"] = str(usd_amount)
+                        listing_data["pricing"]["price_usd"] = str(usd_amount)
+                        listing_data["pricing"]["currency"] = "USD"
+                        listing_data["pricing"]["currency_id"] = 1
+                    elif gel_prices and not listing_data["pricing"].get("price"):
+                        gel_amount = max(int(p['value'].replace(',', '').replace(' ', '')) for p in gel_prices)
+                        listing_data["pricing"]["price"] = str(gel_amount)
+                        listing_data["pricing"]["price_gel"] = str(gel_amount)
+                        listing_data["pricing"]["currency"] = "GEL"
+                        listing_data["pricing"]["currency_id"] = 2
 
             # Extract mileage (if not already from React)
             if not listing_data["condition"].get("mileage_km"):

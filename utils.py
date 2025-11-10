@@ -293,7 +293,19 @@ def format_listing_for_display(car_data: Dict) -> str:
         currency = pricing.get("currency", "USD")
         mileage = condition.get("mileage_km", "N/A")
 
-        return f"{year} {make} {model} | ${price:,} {currency} | {mileage:,} km"
+        # Format price with thousands separator if it's a number
+        try:
+            price_str = f"{int(price):,}" if price != "N/A" else "N/A"
+        except (ValueError, TypeError):
+            price_str = str(price)
+
+        # Format mileage with thousands separator if it's a number
+        try:
+            mileage_str = f"{int(mileage):,}" if mileage != "N/A" else "N/A"
+        except (ValueError, TypeError):
+            mileage_str = str(mileage)
+
+        return f"{year} {make} {model} | ${price_str} {currency} | {mileage_str} km"
 
     except Exception as e:
         logger.error(f"[ERROR] Error formatting listing: {e}")

@@ -148,35 +148,17 @@ class CarListingMonitor:
 
             search_configs = self.config.get("search_configurations", [])
 
-            for config in search_configs:
-                try:
-                    # Prepare data for database
-                    search_data = {
-                        "name": config.get("name"),
-                        "search_url": config.get("base_url"),
-                        "vehicle_make": config.get("parameters", {}).get("mansNModels"),
-                        "is_active": 1 if config.get("enabled", False) else 0,
-                        "created_at": datetime.now().isoformat(),
-                    }
+            if not search_configs:
+                logger.warning("[WARN] No search configurations found in config.json")
+                return
 
-                    # Insert or update search configuration
-                    response = self.database._make_request(
-                        'POST',
-                        f"{self.database.base_url}/search_configurations",
-                        headers=self.database.headers,
-                        json=search_data,
-                        timeout=10
-                    )
+            # Use the new database method to initialize all configurations at once
+            initialized_count = self.database.initialize_search_configurations(search_configs)
 
-                    if response.status_code in [200, 201]:
-                        logger.debug(f"[OK] Stored search config: {config.get('name')}")
-                    else:
-                        logger.warning(f"[WARN] Failed to store search config: {response.status_code}")
-
-                except Exception as e:
-                    logger.warning(f"[WARN] Error storing search config {config.get('name')}: {e}")
-
-            logger.info("[OK] Search configurations initialized")
+            if initialized_count > 0:
+                logger.info(f"[OK] Initialized {initialized_count} search configuration(s)")
+            else:
+                logger.warning("[WARN] No new search configurations were initialized")
 
         except Exception as e:
             logger.warning(f"[WARN] Error initializing search configurations: {e}")
@@ -283,9 +265,20 @@ class CarListingMonitor:
             if len(new_listings) == 1:
                 logger.info("[*] Sending single listing notification...")
                 success = self.notifier.send_new_listing(new_listings[0])
+                if success:
+                    # Record the notification in database
+                    listing_id = new_listings[0].get("listing_id")
+                    if listing_id:
+                        self.database.record_notification(listing_id, "telegram")
             else:
                 logger.info(f"[*] Sending {len(new_listings)} listings notification...")
                 success = self.notifier.send_new_listings(new_listings)
+                if success:
+                    # Record notifications for each listing in database
+                    for listing in new_listings:
+                        listing_id = listing.get("listing_id")
+                        if listing_id:
+                            self.database.record_notification(listing_id, "telegram")
 
             if success:
                 logger.info("[OK] Notification sent successfully")

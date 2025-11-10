@@ -7,6 +7,7 @@ This avoids IPv6 connectivity issues that occur with direct connections in GitHu
 
 import logging
 from datetime import datetime, timedelta
+from typing import List, Dict, Optional
 import os
 import json
 from dotenv import load_dotenv
@@ -357,6 +358,132 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"[ERROR] Failed to store listing: {e}")
             return False
+
+    def record_notification(self, listing_id: str, notification_type: str = "telegram") -> bool:
+        """
+        Record a sent notification in the database
+
+        Args:
+            listing_id: The listing ID that was notified about
+            notification_type: Type of notification (telegram, email, etc.)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not listing_id:
+                logger.error("[ERROR] listing_id is required for notification record")
+                return False
+
+            if self.connection_failed:
+                return False
+
+            logger.debug(f"[*] Recording notification for listing {listing_id}")
+
+            notification_record = {
+                "id": f"{listing_id}-{notification_type}-{datetime.now().isoformat()}",
+                "listing_id": listing_id,
+                "notification_type": notification_type,
+                "sent_at": datetime.now().isoformat(),
+                "status": "sent"
+            }
+
+            response = self._make_request(
+                'POST',
+                f"{self.base_url}/notifications_sent",
+                headers={**self.headers, "Prefer": "return=minimal"},
+                json=notification_record,
+                timeout=10
+            )
+
+            if response.status_code not in [200, 201]:
+                logger.warning(f"[WARN] Failed to record notification: {response.status_code}")
+                return False
+
+            logger.debug(f"[OK] Notification recorded for listing {listing_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to record notification: {e}")
+            return False
+
+    def initialize_search_configurations(self, search_configs: List[Dict]) -> int:
+        """
+        Initialize search configurations in the database from config file
+
+        Args:
+            search_configs: List of search configuration dictionaries from config file
+
+        Returns:
+            Number of configurations initialized
+        """
+        try:
+            if not search_configs:
+                logger.warning("[WARN] No search configurations to initialize")
+                return 0
+
+            if self.connection_failed:
+                return 0
+
+            initialized_count = 0
+
+            for config in search_configs:
+                try:
+                    config_id = config.get("id") or f"search-{datetime.now().isoformat()}"
+
+                    # Check if configuration already exists
+                    response = self._make_request(
+                        'GET',
+                        f"{self.base_url}/search_configurations?id=eq.{config_id}&limit=1",
+                        headers=self.headers,
+                        timeout=10
+                    )
+
+                    if response.status_code == 200 and len(response.json()) > 0:
+                        logger.debug(f"[*] Search configuration {config_id} already exists")
+                        continue
+
+                    # Insert new configuration
+                    search_config_record = {
+                        "id": config_id,
+                        "name": config.get("name", ""),
+                        "base_url": config.get("base_url", ""),
+                        "parameters": json.dumps(config.get("parameters", {})),
+                        "vehicle_make": config.get("vehicle_make"),
+                        "vehicle_model": config.get("vehicle_model"),
+                        "year_from": str(config.get("year_from")) if config.get("year_from") else None,
+                        "year_to": str(config.get("year_to")) if config.get("year_to") else None,
+                        "price_from": str(config.get("price_from")) if config.get("price_from") else None,
+                        "price_to": str(config.get("price_to")) if config.get("price_to") else None,
+                        "is_active": "1" if config.get("enabled", True) else "0",
+                        "created_at": datetime.now().isoformat(),
+                        "last_checked_at": None
+                    }
+
+                    response = self._make_request(
+                        'POST',
+                        f"{self.base_url}/search_configurations",
+                        headers={**self.headers, "Prefer": "return=minimal"},
+                        json=search_config_record,
+                        timeout=10
+                    )
+
+                    if response.status_code not in [200, 201]:
+                        logger.warning(f"[WARN] Failed to initialize search config {config_id}: {response.status_code}")
+                        continue
+
+                    logger.info(f"[OK] Initialized search configuration: {config.get('name')}")
+                    initialized_count += 1
+
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to initialize search config: {e}")
+                    continue
+
+            return initialized_count
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to initialize search configurations: {e}")
+            return 0
 
     def cleanup_old_listings(self, days: int = 365) -> int:
         """

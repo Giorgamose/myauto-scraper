@@ -201,38 +201,79 @@ class TelegramNotificationManager:
     def _format_new_listing(car):
         """Format single car listing for Telegram"""
 
+        # Format car title - use individual fields if available, otherwise use title field
+        make = car.get('make', '')
+        model = car.get('model', '')
+        year = car.get('year', '')
+
+        # If we have make/model/year, use them
+        if make or model or year:
+            title = f"{make} {model} {year}".strip()
+        else:
+            # Otherwise use the combined title field
+            title = car.get('title', 'Unknown Vehicle')
+
         # Format price with thousands separator
         price = car.get('price', 'N/A')
         if isinstance(price, (int, float)):
             price_str = f"${price:,.0f}"
         else:
-            price_str = f"${price}"
+            # Try to parse string price
+            try:
+                price_num = int(price.replace(',', '').replace(' ', ''))
+                if price_num > 100:  # Likely a real price
+                    price_str = f"${price_num:,.0f}"
+                else:
+                    price_str = f"${price}"
+            except (ValueError, AttributeError):
+                price_str = f"${price}"
 
         # Format mileage with thousands separator
         mileage = car.get('mileage_km', 'N/A')
         if isinstance(mileage, (int, float)):
             mileage_str = f"{mileage:,.0f} km"
         else:
-            mileage_str = f"{mileage} km" if mileage != 'N/A' else "N/A"
+            # Try to parse string mileage
+            try:
+                mileage_num = int(mileage.replace(',', '').replace(' ', ''))
+                mileage_str = f"{mileage_num:,.0f} km"
+            except (ValueError, AttributeError, TypeError):
+                mileage_str = f"{mileage} km" if mileage != 'N/A' else "N/A"
+
+        # Get optional fields with fallbacks
+        location = car.get('location', 'N/A')
+        fuel_type = car.get('fuel_type', 'N/A')
+        transmission = car.get('transmission', 'N/A')
+        drive_type = car.get('drive_type', 'N/A')
+        seller_name = car.get('seller_name', 'N/A')
+        posted_date = car.get('posted_date', 'N/A')
+        url = car.get('url', '#')
+
+        # Ensure URL is properly formatted
+        if url and not url.startswith('http'):
+            url = f"https://www.myauto.ge{url}"
+
+        # Customs status indicator
+        customs_status = '✅ Customs Cleared' if car.get('customs_cleared') else '⚠️ Customs Status Unknown'
 
         return f"""
 <b>🚗 NEW CAR LISTING!</b>
 
-<b>{car.get('make', 'Unknown')} {car.get('model', '')} {car.get('year', '')}</b>
+<b>{title}</b>
 
 <b>💰 Price:</b> {price_str} {car.get('currency', 'USD')}
-<b>📍 Location:</b> {car.get('location', 'N/A')}
+<b>📍 Location:</b> {location}
 <b>🛣️ Mileage:</b> {mileage_str}
-<b>⛽ Fuel:</b> {car.get('fuel_type', 'N/A')}
-<b>🔄 Transmission:</b> {car.get('transmission', 'N/A')}
-<b>🚙 Drive Type:</b> {car.get('drive_type', 'N/A')}
+<b>⛽ Fuel:</b> {fuel_type}
+<b>🔄 Transmission:</b> {transmission}
+<b>🚙 Drive Type:</b> {drive_type}
 
-{('✅ Customs Cleared' if car.get('customs_cleared') else '⚠️ Customs Status Unknown')}
+{customs_status}
 
-👤 <b>Seller:</b> {car.get('seller_name', 'N/A')}
-📅 <b>Posted:</b> {car.get('posted_date', 'N/A')}
+👤 <b>Seller:</b> {seller_name}
+📅 <b>Posted:</b> {posted_date}
 
-<a href="{car.get('url', '#')}">View full listing</a>
+<a href="{url}">View full listing</a>
         """.strip()
 
     @staticmethod

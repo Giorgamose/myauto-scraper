@@ -383,6 +383,140 @@ class MyAutoParser:
             logger.debug(f"Error extracting JSON from HTML: {e}")
             return None
 
+    @staticmethod
+    def extract_vehicle_from_heading(soup) -> Optional[Dict]:
+        """
+        Extract vehicle info from heading element
+        MyAuto.ge displays vehicle as "YEAR MAKE MODEL" in h6 heading
+
+        Args:
+            soup: BeautifulSoup object
+
+        Returns:
+            Dict with vehicle data or None
+        """
+        try:
+            # Look for h6 with vehicle info (format: "2001 Toyota Land Cruiser")
+            h6 = soup.find("h6")
+            if not h6:
+                return None
+
+            text = h6.get_text(strip=True)
+            if not text:
+                return None
+
+            logger.debug(f"[*] Found heading text: {text[:50]}")
+
+            # Parse format: "YEAR MAKE MODEL"
+            # Example: "2001 Toyota Land Cruiser"
+            parts = text.split()
+
+            vehicle_data = {}
+
+            if len(parts) >= 3:
+                # First part is usually year
+                try:
+                    year = int(parts[0])
+                    vehicle_data["year"] = year
+                    logger.debug(f"[OK] Extracted year: {year}")
+                except:
+                    pass
+
+                # Make is typically next (usually 1 word: Toyota, Honda, BMW, etc)
+                if len(parts) >= 2:
+                    make = parts[1]
+                    vehicle_data["make"] = make
+                    logger.debug(f"[OK] Extracted make: {make}")
+
+                # Model is the rest (can be multiple words: Land Cruiser, Range Rover, etc)
+                if len(parts) >= 3:
+                    model = " ".join(parts[2:])
+                    vehicle_data["model"] = model
+                    logger.debug(f"[OK] Extracted model: {model}")
+
+            return vehicle_data if vehicle_data else None
+
+        except Exception as e:
+            logger.debug(f"Error extracting vehicle from heading: {e}")
+            return None
+
+    @staticmethod
+    def extract_react_data_from_scripts(html: str) -> Optional[Dict]:
+        """
+        Extract data embedded in React app script tags
+        MyAuto.ge embeds listing data in script tags for SEO/React hydration
+
+        Args:
+            html: HTML content
+
+        Returns:
+            Parsed data dict or None
+        """
+
+        try:
+            import json
+            soup = BeautifulSoup(html, "lxml")
+
+            # Find all script tags without type attribute (often contains app state)
+            scripts = soup.find_all("script")
+
+            for script in scripts:
+                if not script.string:
+                    continue
+
+                script_content = script.string
+
+                # Look for JSON patterns in script content
+                # Common patterns: "listing":{...}, "vehicle":{...}, "__INITIAL_STATE__"
+                if "listing" not in script_content.lower() and "vehicle" not in script_content.lower():
+                    continue
+
+                # Try to extract JSON from script content
+                # Look for patterns like: {..."listing":{...}} or {..."vehicle":{...}}
+                try:
+                    # Try to find and parse JSON objects
+                    # Handle both wrapped and unwrapped JSON
+
+                    # First, try to parse the entire script as JSON
+                    try:
+                        data = json.loads(script_content)
+                        if isinstance(data, dict):
+                            logger.debug(f"[OK] Extracted JSON from script tag ({len(script_content)} chars)")
+                            return data
+                    except:
+                        pass
+
+                    # Try to find JSON object patterns
+                    # Look for {...} patterns containing listing/vehicle data
+                    import re
+                    json_patterns = [
+                        r'\{[^{}]*"listing"[^{}]*\}',
+                        r'\{[^{}]*"vehicle"[^{}]*\}',
+                        r'\{[^{}]*"make"[^{}]*\}',
+                    ]
+
+                    for pattern in json_patterns:
+                        matches = re.findall(pattern, script_content)
+                        for match in matches:
+                            try:
+                                data = json.loads(match)
+                                if isinstance(data, dict) and any(k in data for k in ["listing", "vehicle", "make"]):
+                                    logger.debug(f"[OK] Found data pattern in script: {list(data.keys())}")
+                                    return data
+                            except:
+                                continue
+
+                except Exception as e:
+                    logger.debug(f"[*] Could not parse script content: {e}")
+                    continue
+
+            logger.debug("[*] No React data found in script tags")
+            return None
+
+        except Exception as e:
+            logger.debug(f"Error extracting React data: {e}")
+            return None
+
 
 def test_parser():
     """Test parser functions"""

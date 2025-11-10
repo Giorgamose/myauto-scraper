@@ -265,21 +265,36 @@ class MyAutoScraper:
                     status_code = response.status
 
                     # Wait for content to load (for React/dynamic apps)
-                    # Try to wait for listing elements to appear
                     logger.debug("[*] Waiting for content to render...")
+
+                    # Check if this is a detail page (/pr/) or search results page
+                    is_detail_page = "/pr/" in full_url
+
                     try:
-                        # Wait for either search results or "no results" message
-                        page.wait_for_selector(
-                            'a[href*="/pr/"], [class*="no-result"], [class*="empty"]',
-                            timeout=5000
-                        )
-                        logger.debug("[OK] Content loaded")
+                        if is_detail_page:
+                            # For detail pages, wait for vehicle-specific elements
+                            logger.debug("[*] Detail page detected - waiting for vehicle info...")
+                            page.wait_for_selector(
+                                'h1, [class*="price"], [class*="make"], [class*="model"], [class*="year"], [class*="mileage"]',
+                                timeout=6000
+                            )
+                            logger.debug("[OK] Vehicle info elements loaded")
+                        else:
+                            # For search results, wait for listing links or "no results"
+                            logger.debug("[*] Search results page - waiting for listings...")
+                            page.wait_for_selector(
+                                'a[href*="/pr/"], [class*="no-result"], [class*="empty"]',
+                                timeout=5000
+                            )
+                            logger.debug("[OK] Listings loaded")
                     except Exception as e:
                         logger.debug(f"[*] Content wait timed out or failed (may be OK): {e}")
                         # Continue anyway - page might still have content
 
-                    # Add a small delay to ensure content is fully rendered
-                    time.sleep(2)
+                    # Add delay to ensure content is fully rendered
+                    # Detail pages may need more time for React rendering
+                    delay = 3 if is_detail_page else 2
+                    time.sleep(delay)
 
                     html_content = page.content()
 
@@ -413,6 +428,7 @@ class MyAutoScraper:
                               url: str) -> Optional[Dict]:
         """
         Parse HTML listing detail page and extract all information
+        Tries multiple extraction strategies for React SPA content
 
         Args:
             html: HTML content
@@ -440,97 +456,156 @@ class MyAutoScraper:
                 "last_updated": None
             }
 
+            # STRATEGY 1: Try to extract vehicle info from heading
+            logger.debug("[*] Attempting heading extraction...")
+            heading_data = MyAutoParser.extract_vehicle_from_heading(soup)
+
+            if heading_data:
+                logger.debug("[OK] Found vehicle data in heading")
+                listing_data["vehicle"].update(heading_data)
+
+            # STRATEGY 1B: Try to extract data from React app embedded data
+            logger.debug("[*] Attempting React data extraction...")
+            react_data = MyAutoParser.extract_react_data_from_scripts(html)
+
+            if react_data:
+                logger.debug("[OK] Found React embedded data")
+                # Try to extract vehicle info from React data
+                # Handle different possible structures
+                vehicle = react_data.get("vehicle", {})
+                pricing = react_data.get("pricing", {})
+                engine = react_data.get("engine", {})
+                seller = react_data.get("seller", {})
+                condition = react_data.get("condition", {})
+
+                # Merge React data into listing_data
+                if vehicle:
+                    listing_data["vehicle"].update(vehicle)
+                if pricing:
+                    listing_data["pricing"].update(pricing)
+                if engine:
+                    listing_data["engine"].update(engine)
+                if seller:
+                    listing_data["seller"].update(seller)
+                if condition:
+                    listing_data["condition"].update(condition)
+
+                # Try to extract at root level too (if data is flat)
+                for key in ["make", "model", "year", "price", "mileage_km"]:
+                    if key in react_data and key not in ["vehicle", "pricing", "condition"]:
+                        if key in ["make", "model", "year"]:
+                            listing_data["vehicle"][key] = react_data[key]
+                        elif key == "price":
+                            listing_data["pricing"][key] = react_data[key]
+                        elif key == "mileage_km":
+                            listing_data["condition"][key] = react_data[key]
+
+            # STRATEGY 2: Extract from CSS selectors (fallback for non-React content)
+            logger.debug("[*] Fallback: CSS selector extraction...")
+
             # Extract main title/heading
             title = MyAutoParser.extract_text(soup, "h1, .title, .listing-title")
 
-            # Extract price
-            price_text = MyAutoParser.extract_text(soup, ".price, .listing-price, [data-price]")
-            if price_text:
-                price_data = MyAutoParser.normalize_price(price_text)
-                if price_data:
-                    listing_data["pricing"]["price"] = price_data.get("price")
-                    listing_data["pricing"]["currency"] = price_data.get("currency")
-                    listing_data["pricing"]["currency_id"] = {"USD": 1, "GEL": 2, "EUR": 3}.get(price_data.get("currency"), 1)
+            # Extract price (if not already from React)
+            if not listing_data["pricing"].get("price"):
+                price_text = MyAutoParser.extract_text(soup, ".price, .listing-price, [data-price]")
+                if price_text:
+                    price_data = MyAutoParser.normalize_price(price_text)
+                    if price_data:
+                        listing_data["pricing"]["price"] = price_data.get("price")
+                        listing_data["pricing"]["currency"] = price_data.get("currency")
+                        listing_data["pricing"]["currency_id"] = {"USD": 1, "GEL": 2, "EUR": 3}.get(price_data.get("currency"), 1)
 
-            # Extract mileage
-            mileage_text = MyAutoParser.extract_text(soup, ".mileage, .km, [data-mileage]")
-            if mileage_text:
-                listing_data["condition"]["mileage_km"] = MyAutoParser.extract_number(mileage_text)
-                listing_data["condition"]["mileage_unit"] = "km"
+            # Extract mileage (if not already from React)
+            if not listing_data["condition"].get("mileage_km"):
+                mileage_text = MyAutoParser.extract_text(soup, ".mileage, .km, [data-mileage]")
+                if mileage_text:
+                    listing_data["condition"]["mileage_km"] = MyAutoParser.extract_number(mileage_text)
+                    listing_data["condition"]["mileage_unit"] = "km"
 
-            # Extract vehicle specs (make, model, year)
-            # These selectors may need adjustment based on actual HTML structure
-            make = MyAutoParser.extract_text(soup, ".make, [data-make], .brand")
-            model = MyAutoParser.extract_text(soup, ".model, [data-model]")
-            year_text = MyAutoParser.extract_text(soup, ".year, [data-year]")
+            # Extract vehicle specs (make, model, year) - only if not from React
+            if not listing_data["vehicle"].get("make"):
+                make = MyAutoParser.extract_text(soup, ".make, [data-make], .brand")
+                if make:
+                    listing_data["vehicle"]["make"] = make
 
-            if make:
-                listing_data["vehicle"]["make"] = make
-            if model:
-                listing_data["vehicle"]["model"] = model
-            if year_text:
-                listing_data["vehicle"]["year"] = MyAutoParser.extract_number(year_text)
+            if not listing_data["vehicle"].get("model"):
+                model = MyAutoParser.extract_text(soup, ".model, [data-model]")
+                if model:
+                    listing_data["vehicle"]["model"] = model
+
+            if not listing_data["vehicle"].get("year"):
+                year_text = MyAutoParser.extract_text(soup, ".year, [data-year]")
+                if year_text:
+                    listing_data["vehicle"]["year"] = MyAutoParser.extract_number(year_text)
 
             # Extract fuel type
-            fuel = MyAutoParser.extract_text(soup, ".fuel-type, [data-fuel]")
-            if fuel:
-                listing_data["engine"]["fuel_type"] = fuel.capitalize()
+            if not listing_data["engine"].get("fuel_type"):
+                fuel = MyAutoParser.extract_text(soup, ".fuel-type, [data-fuel]")
+                if fuel:
+                    listing_data["engine"]["fuel_type"] = fuel.capitalize()
 
             # Extract transmission
-            transmission = MyAutoParser.extract_text(soup, ".transmission, [data-transmission]")
-            if transmission:
-                listing_data["engine"]["transmission"] = transmission.capitalize()
+            if not listing_data["engine"].get("transmission"):
+                transmission = MyAutoParser.extract_text(soup, ".transmission, [data-transmission]")
+                if transmission:
+                    listing_data["engine"]["transmission"] = transmission.capitalize()
 
             # Extract location
-            location = MyAutoParser.extract_text(soup, ".location, .region, [data-location]")
-            if location:
-                listing_data["seller"]["location"] = location
+            if not listing_data["seller"].get("location"):
+                location = MyAutoParser.extract_text(soup, ".location, .region, [data-location]")
+                if location:
+                    listing_data["seller"]["location"] = location
 
             # Extract seller name
-            seller_name = MyAutoParser.extract_text(soup, ".seller-name, [data-seller], .seller")
-            if seller_name:
-                listing_data["seller"]["seller_name"] = seller_name
+            if not listing_data["seller"].get("seller_name"):
+                seller_name = MyAutoParser.extract_text(soup, ".seller-name, [data-seller], .seller")
+                if seller_name:
+                    listing_data["seller"]["seller_name"] = seller_name
 
             # Extract images
-            images = []
-            img_elements = soup.select("img.listing-photo, img.car-photo, .photo img")
+            if not listing_data["media"].get("photos"):
+                images = []
+                img_elements = soup.select("img.listing-photo, img.car-photo, .photo img")
 
-            for img in img_elements[:20]:  # Limit to 20 images
-                src = img.get("src") or img.get("data-src")
-                if src:
-                    # Convert to HTTPS if needed
-                    if src.startswith("http"):
-                        images.append(src)
-                    elif src.startswith("//"):
-                        images.append("https:" + src)
+                for img in img_elements[:20]:  # Limit to 20 images
+                    src = img.get("src") or img.get("data-src")
+                    if src:
+                        # Convert to HTTPS if needed
+                        if src.startswith("http"):
+                            images.append(src)
+                        elif src.startswith("//"):
+                            images.append("https:" + src)
 
-            if images:
-                listing_data["media"]["photos"] = images
-                listing_data["media"]["primary_image_url"] = images[0]
-                listing_data["media"]["photo_count"] = len(images)
+                if images:
+                    listing_data["media"]["photos"] = images
+                    listing_data["media"]["primary_image_url"] = images[0]
+                    listing_data["media"]["photo_count"] = len(images)
 
             # Extract dates (if available)
-            # Format: "Posted: 2024-11-09" or similar
-            date_text = MyAutoParser.extract_text(soup, ".posted-date, [data-posted], .date")
-            if date_text:
-                listing_data["posted_date"] = date_text
+            if not listing_data["posted_date"]:
+                date_text = MyAutoParser.extract_text(soup, ".posted-date, [data-posted], .date")
+                if date_text:
+                    listing_data["posted_date"] = date_text
 
             listing_data["last_updated"] = __import__("datetime").datetime.now().isoformat()
 
             # Extract customs cleared status
-            customs_text = soup.get_text().lower()
-            listing_data["condition"]["customs_cleared"] = "customs" in customs_text and "cleared" in customs_text
+            if not listing_data["condition"].get("customs_cleared"):
+                customs_text = soup.get_text().lower()
+                listing_data["condition"]["customs_cleared"] = "customs" in customs_text and "cleared" in customs_text
 
             # Extract description
-            description = MyAutoParser.extract_text(
-                soup,
-                ".description, .listing-description, [data-description]"
-            )
-            if description:
-                listing_data["description"] = {
-                    "text": description,
-                    "features": []
-                }
+            if not listing_data.get("description"):
+                description = MyAutoParser.extract_text(
+                    soup,
+                    ".description, .listing-description, [data-description]"
+                )
+                if description:
+                    listing_data["description"] = {
+                        "text": description,
+                        "features": []
+                    }
 
             # Log what we found
             logger.debug(f"[OK] Extracted listing data for {listing_id}")
@@ -538,12 +613,15 @@ class MyAutoScraper:
             logger.debug(f"    Model: {listing_data['vehicle'].get('model')}")
             logger.debug(f"    Year: {listing_data['vehicle'].get('year')}")
             logger.debug(f"    Price: {listing_data['pricing'].get('price')}")
+            logger.debug(f"    Mileage: {listing_data['condition'].get('mileage_km')}")
             logger.debug(f"    Images: {len(listing_data['media'].get('photos', []))}")
 
             return listing_data
 
         except Exception as e:
             logger.error(f"[ERROR] Error parsing listing details: {e}")
+            import traceback
+            logger.debug(f"    Traceback: {traceback.format_exc()}")
             return None
 
     def close(self):

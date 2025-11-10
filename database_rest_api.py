@@ -11,6 +11,10 @@ import os
 import json
 from dotenv import load_dotenv
 
+# Suppress SSL warnings when verification is disabled
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 # Load environment variables from .env files
 load_dotenv('.env.local')
 load_dotenv('.env')
@@ -255,6 +259,12 @@ class DatabaseManager:
             seller = listing_data.get("seller", {})
             media = listing_data.get("media", {})
 
+            # Helper to convert booleans to integers (for database compatibility)
+            def to_int(value):
+                if isinstance(value, bool):
+                    return 1 if value else 0
+                return value
+
             vehicle_details = {
                 "listing_id": listing_id,
                 "make": vehicle.get("make"),
@@ -280,21 +290,21 @@ class DatabaseManager:
                 "status": condition.get("status"),
                 "mileage_km": condition.get("mileage_km"),
                 "mileage_unit": condition.get("mileage_unit"),
-                "customs_cleared": condition.get("customs_cleared"),
-                "technical_inspection_passed": condition.get("technical_inspection_passed"),
+                "customs_cleared": to_int(condition.get("customs_cleared")),
+                "technical_inspection_passed": to_int(condition.get("technical_inspection_passed")),
                 "condition_description": condition.get("condition_description"),
                 "price": pricing.get("price"),
                 "currency": pricing.get("currency"),
                 "currency_id": pricing.get("currency_id"),
-                "negotiable": pricing.get("negotiable"),
-                "installment_available": pricing.get("installment_available"),
-                "exchange_possible": pricing.get("exchange_possible"),
+                "negotiable": to_int(pricing.get("negotiable")),
+                "installment_available": to_int(pricing.get("installment_available")),
+                "exchange_possible": to_int(pricing.get("exchange_possible")),
                 "seller_type": seller.get("seller_type"),
                 "seller_name": seller.get("seller_name"),
                 "seller_phone": seller.get("seller_phone"),
                 "location": seller.get("location"),
                 "location_id": seller.get("location_id"),
-                "is_dealer": seller.get("is_dealer"),
+                "is_dealer": to_int(seller.get("is_dealer")),
                 "dealer_id": seller.get("dealer_id"),
                 "primary_image_url": media.get("primary_image_url"),
                 "photo_count": media.get("photo_count"),
@@ -303,8 +313,8 @@ class DatabaseManager:
                 "last_updated": listing_data.get("last_updated"),
                 "url": listing_data.get("url"),
                 "view_count": listing_data.get("view_count"),
-                "is_vip": listing_data.get("is_vip"),
-                "is_featured": listing_data.get("is_featured")
+                "is_vip": to_int(listing_data.get("is_vip")),
+                "is_featured": to_int(listing_data.get("is_featured"))
             }
 
             # Remove None values to avoid null constraint violations

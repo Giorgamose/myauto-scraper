@@ -357,11 +357,23 @@ class TelegramNotificationManager:
             transmission = car.get('transmission') or 'N/A'
             drive_type = car.get('drive_type') or 'N/A'
             displacement = car.get('displacement_liters') or 'N/A'
+            description = car.get('description', '')
 
             message += f"<b>{i}. {title}</b>\n"
             message += f"   💰 {price_str} | 📍 {location}\n"
             message += f"   🛣️ {mileage_str} km | ⛽ {fuel_type}\n"
             message += f"   🔧 {displacement}L | 🚙 {drive_type} | 🔄 {transmission}\n"
+
+            # Add description if available (limit to 150 chars for compact format)
+            if description:
+                if isinstance(description, dict):
+                    description = description.get('text', '')
+                if description:
+                    description_short = str(description)[:150]
+                    if len(str(description)) > 150:
+                        description_short += "..."
+                    message += f"   📝 {description_short}\n"
+
             message += f"   <a href=\"{url}\">View listing</a>\n\n"
 
         if len(cars_list) > 10:

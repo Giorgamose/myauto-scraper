@@ -214,19 +214,21 @@ class TelegramNotificationManager:
             title = car.get('title', 'Unknown Vehicle')
 
         # Format price with thousands separator
-        price = car.get('price', 'N/A')
-        if isinstance(price, (int, float)):
+        price = car.get('price')
+        if not price:
+            price_str = 'N/A'
+        elif isinstance(price, (int, float)):
             price_str = f"${price:,.0f}"
         else:
             # Try to parse string price
             try:
-                price_num = int(price.replace(',', '').replace(' ', ''))
+                price_num = int(str(price).replace(',', '').replace(' ', ''))
                 if price_num > 100:  # Likely a real price
                     price_str = f"${price_num:,.0f}"
                 else:
                     price_str = f"${price}"
-            except (ValueError, AttributeError):
-                price_str = f"${price}"
+            except (ValueError, AttributeError, TypeError):
+                price_str = 'N/A'
 
         # Format mileage with thousands separator
         mileage = car.get('mileage_km', 'N/A')
@@ -259,12 +261,15 @@ class TelegramNotificationManager:
         customs_status = '✅ Customs Cleared' if car.get('customs_cleared') else '⚠️ Customs Status Unknown'
 
         # Build base message
+        currency = car.get('currency', 'USD')
+        price_display = f"{price_str} {currency}" if price_str != 'N/A' else price_str
+
         message = f"""
 <b>🚗 NEW CAR LISTING!</b>
 
 <b>{title}</b>
 
-<b>💰 Price:</b> {price_str} {car.get('currency', 'USD')}
+<b>💰 Price:</b> {price_display}
 <b>📍 Location:</b> {location}
 <b>🛣️ Mileage:</b> {mileage_str}
 <b>⛽ Fuel:</b> {fuel_type}
@@ -293,7 +298,9 @@ class TelegramNotificationManager:
     def _format_multiple_listings(cars_list):
         """Format multiple listings for Telegram"""
 
-        message = f"<b>🎉 {len(cars_list)} NEW CAR LISTINGS!</b>\n\n"
+        # Use correct singular/plural form
+        listing_word = "LISTING" if len(cars_list) == 1 else "LISTINGS"
+        message = f"<b>🎉 {len(cars_list)} NEW CAR {listing_word}!</b>\n\n"
 
         for i, car in enumerate(cars_list[:10], 1):
             # Format title - use individual fields if available, otherwise use title field
@@ -309,31 +316,35 @@ class TelegramNotificationManager:
                 title = car.get('title', 'Unknown Vehicle')
 
             # Format price safely
-            price = car.get('price', 'N/A')
-            if isinstance(price, (int, float)):
+            price = car.get('price')
+            if not price:
+                price_str = 'N/A'
+            elif isinstance(price, (int, float)):
                 price_str = f"${price:,.0f}"
             else:
                 # Try to parse string price
                 try:
-                    price_num = int(price.replace(',', '').replace(' ', ''))
+                    price_num = int(str(price).replace(',', '').replace(' ', ''))
                     if price_num > 100:
                         price_str = f"${price_num:,.0f}"
                     else:
                         price_str = f"${price}"
-                except (ValueError, AttributeError):
-                    price_str = f"${price}"
+                except (ValueError, AttributeError, TypeError):
+                    price_str = 'N/A'
 
             # Format mileage safely
-            mileage = car.get('mileage_km', 'N/A')
-            if isinstance(mileage, (int, float)):
+            mileage = car.get('mileage_km')
+            if not mileage:
+                mileage_str = 'N/A'
+            elif isinstance(mileage, (int, float)):
                 mileage_str = f"{mileage:,.0f}"
             else:
                 # Try to parse string mileage
                 try:
-                    mileage_num = int(mileage.replace(',', '').replace(' ', ''))
+                    mileage_num = int(str(mileage).replace(',', '').replace(' ', ''))
                     mileage_str = f"{mileage_num:,.0f}"
                 except (ValueError, AttributeError, TypeError):
-                    mileage_str = f"{mileage}"
+                    mileage_str = 'N/A'
 
             # Ensure URL is properly formatted
             url = car.get('url', '#')

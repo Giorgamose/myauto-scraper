@@ -706,42 +706,95 @@ class MyAutoScraper:
             if not listing_data.get("description"):
                 description = MyAutoParser.extract_text(
                     soup,
-                    ".description, .listing-description, [data-description]"
+                    ".description, .listing-description, [data-description], .car-description"
                 )
-                if not description:
-                    # FALLBACK: Look for longer text blocks that might be descriptions
-                    # Look for paragraphs or divs with substantial text content
-                    all_text = soup.get_text()
 
-                    # Try to find description-like text blocks
-                    # Usually descriptions are Georgian text blocks with length > 30 chars
+                if not description:
+                    # FALLBACK 1: Look for text blocks that look like descriptions
+                    # Be less restrictive - descriptions might be short or without punctuation
                     import re
 
-                    # Look for paragraphs/divs that contain description text
-                    for elem in soup.find_all(['p', 'div', 'span']):
-                        text = elem.get_text(strip=True)
+                    # Known UI/metadata patterns to exclude
+                    known_patterns = [
+                        'მწარმოებელი', 'მოდელი', 'წელი', 'გარბენი', 'კილომეტრი',
+                        'საწვავის', 'კოლოფი', 'ძრავი', 'დისკი', 'რადიატორი',
+                        'შენახვა', 'შედარება', 'მიბმა', 'ნახვა', 'პირველი',
+                        'ამჯამად', 'დაკეცი', 'იყიდება'
+                    ]
 
-                        # Check if this looks like a description
-                        # Should be: Georgian text, reasonable length, multiple words, not metadata
-                        if (len(text) > 100 and len(text) < 500 and
-                            any('\u10A0' <= c <= '\u10FF' for c in text) and  # Has Georgian
-                            (';' in text or ',' in text)):  # Contains punctuation (typical of descriptions)
+                    # Strategy 1: Look for descriptions (not spec lists)
+                    # Descriptions typically have sentence-like structure, not just lists
+                    description_candidates = []
 
-                            # Make sure it's not metadata or specs
-                            # Metadata typically has lots of numbers, units, slashes
-                            num_count = sum(1 for c in text if c.isdigit())
-                            slash_count = text.count('/')
-                            if num_count < len(text) * 0.3 and slash_count < 3:  # Not too many numbers/slashes
-                                # Make sure it's not a known label or field
-                                known_patterns = [
-                                    'მწარმოებელი', 'მოდელი', 'წელი', 'გარბენი',
-                                    'საწვავის', 'კოლოფი', 'ძრავი', 'დისკი',
-                                    'შენახვა', 'შედარება', 'მიბმა', 'ნახვა'
-                                ]
-                                if not any(label in text[:100] for label in known_patterns):
-                                    description = text
-                                    logger.debug(f"[FALLBACK] Extracted description: {text[:100]}...")
-                                    break
+                    # Look for dedicated description sections
+                    desc_patterns = [
+                        '.description-section',
+                        '.seller-description',
+                        '.listing-description',
+                        'div[data-description]'
+                    ]
+
+                    for pattern in desc_patterns:
+                        elem = soup.select_one(pattern)
+                        if elem:
+                            text = elem.get_text(strip=True)
+                            if text and len(text) > 20:
+                                description = text
+                                logger.debug(f"[FALLBACK 1a] Found description in {pattern}: {text[:100]}...")
+                                break
+
+                    # Strategy 2: Look in paragraphs and divs, but only if they look like prose
+                    if not description:
+                        for elem in soup.find_all(['p']):  # Start with paragraphs only
+                            text = elem.get_text(strip=True)
+
+                            # Paragraphs should have natural prose characteristics
+                            if (len(text) > 50 and len(text) < 1000 and
+                                any('\u10A0' <= c <= '\u10FF' for c in text)):  # Has Georgian
+
+                                # Should have sentence-like structure (punctuation)
+                                has_period = '.' in text
+                                has_comma = ',' in text
+                                has_semicolon = ';' in text
+
+                                # Skip if looks like a feature list (many short words without punctuation)
+                                word_count = len(text.split())
+                                avg_word_len = len(text.split()) / word_count if word_count > 0 else 0
+
+                                # Real descriptions have better punctuation
+                                if not (has_period or has_comma or has_semicolon):
+                                    continue
+
+                                # Skip known patterns
+                                if any(pattern in text[:200] for pattern in known_patterns):
+                                    continue
+
+                                # Skip feature lists (lists of features without sentences)
+                                if text.count(' ') < 10:
+                                    continue
+
+                                # This looks like a real description
+                                description = text
+                                logger.debug(f"[FALLBACK 1b] Found description in paragraph: {text[:100]}...")
+                                break
+
+                    # FALLBACK 2: If still not found, look for Georgian text in meta description
+                    if not description:
+                        meta_desc = soup.find('meta', attrs={'name': 'description'})
+                        if meta_desc:
+                            meta_content = meta_desc.get('content', '')
+                            if meta_content and any('\u10A0' <= c <= '\u10FF' for c in meta_content):
+                                description = meta_content
+                                logger.debug(f"[FALLBACK 2] Extracted description from meta: {meta_content[:100]}...")
+
+                    # FALLBACK 3: Look in Open Graph description
+                    if not description:
+                        og_desc = soup.find('meta', attrs={'property': 'og:description'})
+                        if og_desc:
+                            og_content = og_desc.get('content', '')
+                            if og_content and any('\u10A0' <= c <= '\u10FF' for c in og_content):
+                                description = og_content
+                                logger.debug(f"[FALLBACK 3] Extracted description from og:description: {og_content[:100]}...")
 
                 if description:
                     listing_data["description"] = {

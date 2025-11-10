@@ -1,0 +1,134 @@
+name: Telegram Bot - Continuous Monitoring
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+  # Run on push to main (optional, for testing)
+  push:
+    branches:
+      - main
+    paths:
+      - 'telegram_bot_*.py'
+      - '.github/workflows/telegram-bot.yml'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env file with secrets
+        run: |
+          cat > .env.local << EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_API_KEY=${{ secrets.SUPABASE_API_KEY }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          CONFIG_PATH=./config.json
+          LOG_LEVEL=INFO
+          EOF
+
+      - name: Run bot check cycle
+        run: |
+          python -c "
+          import sys
+          import os
+          sys.path.insert(0, '.')
+          from telegram_bot_scheduler import TelegramBotScheduler
+          from telegram_bot_database_supabase import TelegramBotDatabaseSupabase
+          from telegram_bot_backend import TelegramBotBackend
+          from scraper import MyAutoScraper
+          from notifications import NotificationManager
+          from utils import load_config_file, get_config_path
+
+          print('Starting bot check cycle...')
+          print('=' * 60)
+
+          try:
+              # Load configuration first
+              config_path = get_config_path()
+              config = load_config_file(config_path)
+
+              if not config:
+                  raise Exception(f'Failed to load config from {config_path}')
+
+              print('[*] Configuration loaded')
+
+              # Initialize components
+              print('[*] Initializing Supabase database...')
+              db = TelegramBotDatabaseSupabase()
+              print('[OK] Database initialized')
+
+              print('[*] Initializing scraper...')
+              scraper = MyAutoScraper(config)
+              print('[OK] Scraper initialized')
+
+              print('[*] Initializing bot backend...')
+              bot = TelegramBotBackend(
+                  database=db,
+                  scraper=scraper,
+                  config=config
+              )
+              print('[OK] Bot backend initialized')
+
+              print('[*] Initializing notification manager...')
+              notifier = NotificationManager()
+              print('[OK] Notification manager initialized')
+
+              # Create scheduler but run only one cycle (not continuous)
+              print('[*] Creating scheduler...')
+              scheduler = TelegramBotScheduler(
+                  database=db,
+                  bot_backend=bot,
+                  scraper=scraper,
+                  notifications_manager=notifier,
+                  check_interval_minutes=15,
+                  daemon=False
+              )
+              print('[OK] Scheduler created')
+
+              # Run just one check cycle
+              print('=' * 60)
+              print('[*] Running periodic check cycle...')
+              print('=' * 60)
+              scheduler._execute_check_cycle()
+
+              print('=' * 60)
+              print('✅ Bot check cycle completed successfully')
+              print('=' * 60)
+
+          except Exception as e:
+              print('=' * 60)
+              print(f'❌ Error: {e}')
+              print('=' * 60)
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          "
+
+      - name: Upload logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: bot-logs
+          path: .logs/
+          retention-days: 7
+

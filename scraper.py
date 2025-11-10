@@ -640,52 +640,78 @@ class MyAutoScraper:
 
             # FALLBACK: Extract price if not found yet
             if not listing_data["pricing"].get("price"):
-                # Look for price patterns: "12 000 $" or "₾ 12000" or similar
+                # Extract ALL prices and pick the lowest (USD is always lower than GEL)
+                # USD: 15,800 vs GEL: 42,800 -> Pick 15,800
                 full_text = soup.get_text()
                 import re
 
-                # Try common price patterns - ordered by likelihood
-                price_patterns = [
-                    (r'ფასი\s*[:=]\s*([0-9\s,]+)(?:\s*(?:\$|USD|₾|GEL))?', 'Georgian label'),
-                    (r'(\d{1,3}(?:\s\d{3})+)\s*\$', '"12 000 $"'),  # Space-separated with $
-                    (r'(\d{1,3}(?:,\d{3})+)\s*\$', '"12,000 $"'),  # Comma-separated with $
-                    (r'(\d{5,})\s*\$', 'Large number $'),  # 5+ digit number with $
-                    (r'(\d{1,3}(?:\s\d{3})+)\s*USD', '"12 000 USD"'),  # Space-separated with USD
-                    (r'(\d{1,3}(?:,\d{3})+)\s*USD', '"12,000 USD"'),  # Comma-separated with USD
-                    (r'(\d{5,})\s*USD', 'Large number USD'),  # 5+ digit number with USD
-                    (r'₾\s*(\d{1,3}(?:\s\d{3})+)', '"₾ 12 000"'),  # GEL with space-separated
-                    (r'₾\s*(\d{1,3}(?:,\d{3})+)', '"₾ 12,000"'),  # GEL with comma-separated
-                    (r'(\d{1,3}(?:\s\d{3})+)\s*₾', '"12 000 ₾"'),  # Space-separated ₾
-                    (r'(\d{1,3}(?:,\d{3})+)\s*₾', '"12,000 ₾"'),  # Comma-separated ₾
-                ]
+                # Collect all possible prices with their amounts
+                prices_found = {}  # {amount: (price_str, currency)}
 
-                for pattern, desc in price_patterns:
-                    matches = re.findall(pattern, full_text)
-                    if matches:
-                        # Take first match and clean it
-                        price_raw = matches[0]
-                        price_str = price_raw.replace(' ', '').replace(',', '')
+                # Pattern: any number that looks like a price (4-6 digits)
+                all_prices = re.findall(r'(\d{1,3}(?:[,\s]\d{3})+)', full_text)
 
-                        # Validate it's a reasonable price (3+ digits)
-                        if price_str and price_str.isdigit() and len(price_str) >= 3:
-                            listing_data["pricing"]["price"] = price_str
-                            logger.debug(f"[FALLBACK] Extracted price: {price_str} (pattern: {desc})")
+                for price_raw in all_prices:
+                    price_clean = price_raw.replace(' ', '').replace(',', '')
+                    if price_clean.isdigit() and 5000 < int(price_clean) < 10000000:
+                        # Valid price range
+                        amount = int(price_clean)
+                        if amount not in prices_found:
+                            prices_found[amount] = price_clean
 
-                            # Determine currency from context
-                            # Look near the price for currency indicators
-                            match_pos = full_text.find(price_raw)
-                            context = full_text[max(0, match_pos-100):match_pos+200]
+                if prices_found:
+                    # IMPORTANT: USD is always less than GEL
+                    # USD: 10k-500k, GEL: 100k-1000k+
+                    # So pick the LOWEST price (which will be USD)
+                    lowest_price = min(prices_found.keys())
+                    price_str = prices_found[lowest_price]
 
-                            if '$' in context or 'USD' in context:
-                                listing_data["pricing"]["currency"] = "USD"
-                                listing_data["pricing"]["currency_id"] = 1
-                            elif '₾' in context or 'GEL' in context:
-                                listing_data["pricing"]["currency"] = "GEL"
-                                listing_data["pricing"]["currency_id"] = 2
-                            else:
-                                listing_data["pricing"]["currency"] = "USD"
-                                listing_data["pricing"]["currency_id"] = 1
-                            break
+                    listing_data["pricing"]["price"] = price_str
+                    listing_data["pricing"]["currency"] = "USD"  # Lower price = USD
+                    listing_data["pricing"]["currency_id"] = 1
+                    logger.debug(f"[SMART EXTRACTION] Found multiple prices: {list(prices_found.keys())}, selected lowest (USD): {price_str}")
+                else:
+                    # Fallback to pattern-based extraction if no prices found
+                    logger.debug("[*] No direct prices found, trying pattern-based extraction...")
+                    price_found = False
+
+                # Step 2: Pattern-based extraction if no prices found above
+                if not listing_data["pricing"].get("price"):
+                    gel_patterns = [
+                        (r'ფასი\s*[:=]\s*([0-9\s,]+)(?:\s*(?:\$|USD))', 'Georgian label with USD'),  # Prefer if it says USD
+                        (r'₾\s*(\d{1,3}(?:\s\d{3})+)', '"₾ 12 000"'),  # GEL with space-separated
+                        (r'₾\s*(\d{1,3}(?:,\d{3})+)', '"₾ 12,000"'),  # GEL with comma-separated
+                        (r'(\d{1,3}(?:\s\d{3})+)\s*₾', '"12 000 ₾"'),  # Space-separated ₾
+                        (r'(\d{1,3}(?:,\d{3})+)\s*₾', '"12,000 ₾"'),  # Comma-separated ₾
+                        (r'ფასი\s*[:=]\s*([0-9\s,]+)(?:\s*(?:\$|USD|₾|GEL))?', 'Georgian label'),  # Fallback label
+                    ]
+
+                    for pattern, desc in gel_patterns:
+                        matches = re.findall(pattern, full_text)
+                        if matches:
+                            price_raw = matches[0]
+                            price_str = price_raw.replace(' ', '').replace(',', '')
+
+                            # Validate it's a reasonable price (3+ digits)
+                            if price_str and price_str.isdigit() and len(price_str) >= 3:
+                                listing_data["pricing"]["price"] = price_str
+                                logger.debug(f"[FALLBACK] Extracted price: {price_str} (pattern: {desc})")
+
+                                # Determine currency from context
+                                match_pos = full_text.find(price_raw)
+                                context = full_text[max(0, match_pos-100):match_pos+200]
+
+                                if '$' in context or 'USD' in context:
+                                    listing_data["pricing"]["currency"] = "USD"
+                                    listing_data["pricing"]["currency_id"] = 1
+                                elif '₾' in context or 'GEL' in context:
+                                    listing_data["pricing"]["currency"] = "GEL"
+                                    listing_data["pricing"]["currency_id"] = 2
+                                else:
+                                    listing_data["pricing"]["currency"] = "USD"
+                                    listing_data["pricing"]["currency_id"] = 1
+                                price_found = True
+                                break
 
             # FALLBACK: Extract location if not found yet
             if not listing_data["seller"].get("location"):

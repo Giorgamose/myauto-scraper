@@ -271,11 +271,11 @@ class CarListingMonitor:
             "drive_type": vehicle.get("drive_type"),
         })
 
-        # Flatten engine section
+        # Flatten engine section (with None defaults for missing values)
         engine = listing.get("engine", {})
         flattened.update({
-            "fuel_type": engine.get("fuel_type"),
-            "transmission": engine.get("transmission"),
+            "fuel_type": engine.get("fuel_type") or None,
+            "transmission": engine.get("transmission") or None,
         })
 
         # Flatten condition section

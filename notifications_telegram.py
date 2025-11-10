@@ -240,13 +240,13 @@ class TelegramNotificationManager:
             except (ValueError, AttributeError, TypeError):
                 mileage_str = f"{mileage} km" if mileage != 'N/A' else "N/A"
 
-        # Get optional fields with fallbacks
-        location = car.get('location', 'N/A')
-        fuel_type = car.get('fuel_type', 'N/A')
-        transmission = car.get('transmission', 'N/A')
-        drive_type = car.get('drive_type', 'N/A')
-        seller_name = car.get('seller_name', 'N/A')
-        posted_date = car.get('posted_date', 'N/A')
+        # Get optional fields with fallbacks (convert None and empty strings to 'N/A')
+        location = car.get('location') or 'N/A'
+        fuel_type = car.get('fuel_type') or 'N/A'
+        transmission = car.get('transmission') or 'N/A'
+        drive_type = car.get('drive_type') or 'N/A'
+        seller_name = car.get('seller_name') or 'N/A'
+        posted_date = car.get('posted_date') or 'N/A'
         url = car.get('url', '#')
 
         # Ensure URL is properly formatted
@@ -327,9 +327,13 @@ class TelegramNotificationManager:
             if url and not url.startswith('http'):
                 url = f"https://www.myauto.ge{url}"
 
+            # Get fields with proper None handling
+            location = car.get('location') or 'N/A'
+            fuel_type = car.get('fuel_type') or 'N/A'
+
             message += f"<b>{i}. {title}</b>\n"
-            message += f"   💰 {price_str} | 📍 {car.get('location', 'N/A')}\n"
-            message += f"   🛣️ {mileage_str} km | ⛽ {car.get('fuel_type', 'N/A')}\n"
+            message += f"   💰 {price_str} | 📍 {location}\n"
+            message += f"   🛣️ {mileage_str} km | ⛽ {fuel_type}\n"
             message += f"   <a href=\"{url}\">View listing</a>\n\n"
 
         if len(cars_list) > 10:

@@ -640,50 +640,61 @@ class MyAutoScraper:
 
             # FALLBACK: Extract price if not found yet
             if not listing_data["pricing"].get("price"):
-                # Extract ALL prices and pick the lowest (USD is always lower than GEL)
-                # USD: 15,800 vs GEL: 42,800 -> Pick 15,800
+                # Extract ALL prices and pick the FIRST one (appears at top of page)
+                # MyAuto.ge typically displays USD price first, then GEL below
                 full_text = soup.get_text()
                 import re
 
-                # Collect all possible prices with their amounts
-                prices_found = {}  # {amount: price_str}
+                # Find all number patterns with their positions in the text
+                prices_with_positions = []  # [(position, amount, price_str)]
+                usd_prices = []  # Separate list for likely USD prices
+                gel_prices = []  # Separate list for likely GEL prices
 
                 # Pattern 1: Numbers with separators (15,500 or 15 500)
-                all_prices_formatted = re.findall(r'(\d{1,3}(?:[,\s]\d{3})+)', full_text)
+                for match in re.finditer(r'(\d{1,3}(?:[,\s]\d{3})+)', full_text):
+                    price_raw = match.group(1)
+                    price_clean = price_raw.replace(' ', '').replace(',', '')
+                    if price_clean.isdigit():
+                        amount = int(price_clean)
+                        if 5000 < amount < 10000000:
+                            prices_with_positions.append((match.start(), amount, price_clean))
+                            # Typical USD: 5k-300k, GEL: 20k-1000k, but overlap exists
+                            if amount < 300000:
+                                usd_prices.append((match.start(), amount, price_clean))
+                            else:
+                                gel_prices.append((match.start(), amount, price_clean))
 
                 # Pattern 2: Numbers without separators (15500, 25200, etc) - 4 to 7 digits
-                # But exclude things like IDs or years (too many false positives)
-                # Valid price range: 5000 to 10000000
-                all_prices_raw = re.findall(r'\b(\d{4,7})\b', full_text)
-
-                # Process formatted prices
-                for price_raw in all_prices_formatted:
-                    price_clean = price_raw.replace(' ', '').replace(',', '')
-                    if price_clean.isdigit() and 5000 < int(price_clean) < 10000000:
-                        amount = int(price_clean)
-                        if amount not in prices_found:
-                            prices_found[amount] = price_clean
-
-                # Process raw numbers
-                for price_raw in all_prices_raw:
-                    if price_raw.isdigit() and 5000 < int(price_raw) < 10000000:
-                        # Additional filter: look at context to ensure it's a price
-                        # Prices typically appear in specific contexts
+                for match in re.finditer(r'\b(\d{4,7})\b', full_text):
+                    price_raw = match.group(1)
+                    if price_raw.isdigit():
                         amount = int(price_raw)
-                        if amount not in prices_found:
-                            prices_found[amount] = price_raw
+                        if 5000 < amount < 10000000:
+                            # Avoid duplicates (same amount already found)
+                            if not any(p[1] == amount for p in prices_with_positions):
+                                prices_with_positions.append((match.start(), amount, price_raw))
+                                # Same categorization for raw numbers
+                                if amount < 300000:
+                                    usd_prices.append((match.start(), amount, price_raw))
+                                else:
+                                    gel_prices.append((match.start(), amount, price_raw))
 
-                if prices_found:
-                    # IMPORTANT: USD is always less than GEL
-                    # USD: 10k-500k, GEL: 100k-1000k+
-                    # So pick the LOWEST price (which will be USD)
-                    lowest_price = min(prices_found.keys())
-                    price_str = prices_found[lowest_price]
+                # Try to pick USD price first (more common), then fall back to any price
+                candidate_prices = usd_prices if usd_prices else prices_with_positions
+
+                if candidate_prices:
+                    # Sort by position in text (earlier = first on page)
+                    candidate_prices.sort(key=lambda x: x[0])
+
+                    # Pick the FIRST price from candidates (appears earliest on page)
+                    first_position, first_amount, price_str = candidate_prices[0]
 
                     listing_data["pricing"]["price"] = price_str
-                    listing_data["pricing"]["currency"] = "USD"  # Lower price = USD
+                    listing_data["pricing"]["currency"] = "USD"  # First price is typically USD
                     listing_data["pricing"]["currency_id"] = 1
-                    logger.debug(f"[SMART EXTRACTION] Found prices: {sorted(prices_found.keys())}, selected lowest (USD): {price_str}")
+
+                    all_amounts = sorted(set(p[1] for p in prices_with_positions))
+                    logger.debug(f"[SMART EXTRACTION] Found prices: {all_amounts}, selected first USD candidate: {price_str}")
                 else:
                     # Fallback to pattern-based extraction if no prices found
                     logger.debug("[*] No direct prices found, trying pattern-based extraction...")

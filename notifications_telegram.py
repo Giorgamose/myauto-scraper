@@ -245,8 +245,10 @@ class TelegramNotificationManager:
         fuel_type = car.get('fuel_type') or 'N/A'
         transmission = car.get('transmission') or 'N/A'
         drive_type = car.get('drive_type') or 'N/A'
+        displacement = car.get('displacement_liters') or 'N/A'
         seller_name = car.get('seller_name') or 'N/A'
         posted_date = car.get('posted_date') or 'N/A'
+        description = car.get('description', '')
         url = car.get('url', '#')
 
         # Ensure URL is properly formatted
@@ -256,7 +258,8 @@ class TelegramNotificationManager:
         # Customs status indicator
         customs_status = '✅ Customs Cleared' if car.get('customs_cleared') else '⚠️ Customs Status Unknown'
 
-        return f"""
+        # Build base message
+        message = f"""
 <b>🚗 NEW CAR LISTING!</b>
 
 <b>{title}</b>
@@ -267,14 +270,24 @@ class TelegramNotificationManager:
 <b>⛽ Fuel:</b> {fuel_type}
 <b>🔄 Transmission:</b> {transmission}
 <b>🚙 Drive Type:</b> {drive_type}
+<b>🔧 Engine:</b> {displacement} L
 
 {customs_status}
 
 👤 <b>Seller:</b> {seller_name}
-📅 <b>Posted:</b> {posted_date}
+📅 <b>Posted:</b> {posted_date}"""
 
-<a href="{url}">View full listing</a>
-        """.strip()
+        # Add description if available (limit to 500 chars)
+        if description:
+            if isinstance(description, dict):
+                description = description.get('text', '')
+            if description:
+                description_text = str(description)[:500]
+                message += f"\n\n<b>Description:</b>\n{description_text}"
+
+        message += f"\n\n<a href=\"{url}\">View full listing</a>"
+
+        return message.strip()
 
     @staticmethod
     def _format_multiple_listings(cars_list):
@@ -330,10 +343,14 @@ class TelegramNotificationManager:
             # Get fields with proper None handling
             location = car.get('location') or 'N/A'
             fuel_type = car.get('fuel_type') or 'N/A'
+            transmission = car.get('transmission') or 'N/A'
+            drive_type = car.get('drive_type') or 'N/A'
+            displacement = car.get('displacement_liters') or 'N/A'
 
             message += f"<b>{i}. {title}</b>\n"
             message += f"   💰 {price_str} | 📍 {location}\n"
             message += f"   🛣️ {mileage_str} km | ⛽ {fuel_type}\n"
+            message += f"   🔧 {displacement}L | 🚙 {drive_type} | 🔄 {transmission}\n"
             message += f"   <a href=\"{url}\">View listing</a>\n\n"
 
         if len(cars_list) > 10:

@@ -259,6 +259,7 @@ class CarListingMonitor:
             "listing_id": listing.get("listing_id"),
             "url": listing.get("url"),
             "posted_date": listing.get("posted_date"),
+            "description": listing.get("description"),
         }
 
         # Flatten vehicle section
@@ -276,6 +277,7 @@ class CarListingMonitor:
         flattened.update({
             "fuel_type": engine.get("fuel_type") or None,
             "transmission": engine.get("transmission") or None,
+            "displacement_liters": engine.get("displacement_liters") or None,
         })
 
         # Flatten condition section

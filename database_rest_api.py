@@ -212,7 +212,7 @@ class DatabaseManager:
 
     def store_listing(self, listing_data: dict) -> bool:
         """
-        Store a new listing in database
+        Store a new listing in database (with duplicate prevention)
 
         Args:
             listing_data: Dictionary containing listing information
@@ -232,25 +232,48 @@ class DatabaseManager:
 
             logger.debug(f"[*] Storing listing: {listing_id}")
 
-            # Prepare main listing record
-            seen_listing = {
-                "id": listing_id,
-                "created_at": datetime.now().isoformat(),
-                "notified": 1
-            }
+            # Check if listing already exists to prevent duplicates
+            existing = self.has_seen_listing(listing_id)
+            if existing:
+                logger.debug(f"[*] Listing {listing_id} already exists in database, skipping insertion")
+                # Still update vehicle details if needed
+                vehicle_details_exists = False
+                try:
+                    response = self._make_request(
+                        'GET',
+                        f"{self.base_url}/vehicle_details?listing_id=eq.{listing_id}&limit=1",
+                        headers=self.headers,
+                        timeout=10
+                    )
+                    vehicle_details_exists = response.status_code == 200 and len(response.json()) > 0
+                except:
+                    pass
 
-            # Insert into seen_listings
-            response = self._make_request(
-                'POST',
-                f"{self.base_url}/seen_listings",
-                headers={**self.headers, "Prefer": "return=minimal"},
-                json=seen_listing,
-                timeout=10
-            )
+                if vehicle_details_exists:
+                    logger.debug(f"[*] Vehicle details already exist for {listing_id}")
+                    return True
+                # If seen but no details, continue to store details
 
-            if response.status_code not in [200, 201]:
-                logger.error(f"[ERROR] Failed to insert listing: {response.status_code} - {response.text}")
-                return False
+            # Prepare main listing record (only insert if new)
+            if not existing:
+                seen_listing = {
+                    "id": listing_id,
+                    "created_at": datetime.now().isoformat(),
+                    "notified": 1
+                }
+
+                # Insert into seen_listings
+                response = self._make_request(
+                    'POST',
+                    f"{self.base_url}/seen_listings",
+                    headers={**self.headers, "Prefer": "return=minimal"},
+                    json=seen_listing,
+                    timeout=10
+                )
+
+                if response.status_code not in [200, 201]:
+                    logger.error(f"[ERROR] Failed to insert listing: {response.status_code} - {response.text}")
+                    return False
 
             # Prepare vehicle details (flatten nested structure for API)
             # New schema uses VARCHAR for all fields - convert values to strings
@@ -339,18 +362,27 @@ class DatabaseManager:
             # Remove None values to avoid null constraint violations
             vehicle_details = {k: v for k, v in vehicle_details.items() if v is not None}
 
-            # Insert vehicle details
+            # Insert or update vehicle details using UPSERT logic
+            # Supabase doesn't have direct UPSERT in REST, so we use POST with
+            # conflict resolution by trying DELETE then INSERT, or just using POST with
+            # the understanding that duplicate keys will be ignored by database constraints
             response = self._make_request(
                 'POST',
                 f"{self.base_url}/vehicle_details",
-                headers={**self.headers, "Prefer": "return=minimal"},
+                headers={**self.headers, "Prefer": "resolution=merge-duplicates"},
                 json=vehicle_details,
                 timeout=10
             )
 
+            # Accept both 200 (update) and 201 (insert) responses
             if response.status_code not in [200, 201]:
-                logger.error(f"[ERROR] Failed to insert vehicle details: {response.status_code} - {response.text}")
-                return False
+                # If we get a conflict error (duplicate key), that's OK - it means it already exists
+                if "duplicate" in response.text.lower() or response.status_code == 409:
+                    logger.debug(f"[*] Vehicle details for {listing_id} already exist (duplicate detected)")
+                    return True
+                else:
+                    logger.error(f"[ERROR] Failed to insert vehicle details: {response.status_code} - {response.text}")
+                    return False
 
             logger.info(f"[OK] Stored listing: {listing_id}")
             return True

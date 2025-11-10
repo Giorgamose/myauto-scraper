@@ -200,6 +200,9 @@ class CarListingMonitor:
                     new_listings.append(listing)
                     logger.info(f"[+] New listing: {format_listing_for_display(listing)}")
 
+            # Store detailed listings for notification (with fuel_type and other details)
+            detailed_listings = []
+
             if new_listings:
                 logger.info(f"[OK] Detected {len(new_listings)} new listings")
 
@@ -216,24 +219,95 @@ class CarListingMonitor:
                             # Store the complete listing data
                             self.database.store_listing(listing_details)
                             logger.info(f"[OK] Stored listing {listing_id}")
+                            # Use detailed version for notifications (includes fuel_type, transmission, etc.)
+                            detailed_listings.append(listing_details)
                         else:
                             # Store what we have even if details fetch failed
                             logger.warning(f"[WARN] Could not fetch details for {listing_id}, storing summary only")
                             self.database.store_listing(listing)
+                            # Fall back to summary for notification
+                            detailed_listings.append(listing)
 
                     except Exception as e:
                         logger.error(f"[ERROR] Failed to store listing: {e}")
                         self.stats["errors_encountered"] += 1
+                        # Still include in notifications with summary data
+                        detailed_listings.append(listing)
 
             self.stats["total_listings_found"] += len(listings)
             self.stats["new_listings_found"] += len(new_listings)
 
-            return new_listings, len(new_listings)
+            # Return detailed listings instead of summary for better notifications
+            return detailed_listings, len(detailed_listings)
 
         except Exception as e:
             logger.error(f"[ERROR] Error processing search {search_name}: {e}")
             self.stats["errors_encountered"] += 1
             return [], 0
+
+    def _flatten_listing_for_notification(self, listing: Dict) -> Dict:
+        """
+        Flatten nested listing structure for notification formatter
+        Handles both flat (from search summary) and nested (from detail fetch) structures
+        """
+        # If already flat, return as is
+        if "fuel_type" in listing or "transmission" in listing:
+            return listing
+
+        # Flatten nested structure from detail page
+        flattened = {
+            "listing_id": listing.get("listing_id"),
+            "url": listing.get("url"),
+            "posted_date": listing.get("posted_date"),
+        }
+
+        # Flatten vehicle section
+        vehicle = listing.get("vehicle", {})
+        flattened.update({
+            "make": vehicle.get("make"),
+            "model": vehicle.get("model"),
+            "year": vehicle.get("year"),
+            "color": vehicle.get("color"),
+            "drive_type": vehicle.get("drive_type"),
+        })
+
+        # Flatten engine section
+        engine = listing.get("engine", {})
+        flattened.update({
+            "fuel_type": engine.get("fuel_type"),
+            "transmission": engine.get("transmission"),
+        })
+
+        # Flatten condition section
+        condition = listing.get("condition", {})
+        flattened.update({
+            "mileage_km": condition.get("mileage_km"),
+            "customs_cleared": condition.get("customs_cleared"),
+        })
+
+        # Flatten pricing section
+        pricing = listing.get("pricing", {})
+        flattened.update({
+            "price": pricing.get("price"),
+            "currency": pricing.get("currency") or "USD",
+            "exchange_possible": pricing.get("exchange_possible"),
+        })
+
+        # Flatten seller section
+        seller = listing.get("seller", {})
+        flattened.update({
+            "seller_name": seller.get("seller_name"),
+            "location": seller.get("location"),
+        })
+
+        # Create title from make/model/year if not present
+        if "title" not in flattened or not flattened["title"]:
+            make = flattened.get("make", "")
+            model = flattened.get("model", "")
+            year = flattened.get("year", "")
+            flattened["title"] = f"{make} {model} {year}".strip() or "Unknown"
+
+        return flattened
 
     def send_listing_notifications(self, new_listings: List[Dict]) -> int:
         """
@@ -261,28 +335,31 @@ class CarListingMonitor:
                 logger.info("[*] Notifications disabled in config")
                 return 0
 
+            # Flatten all listings to ensure fuel_type and other details are included
+            flattened_listings = [self._flatten_listing_for_notification(listing) for listing in new_listings]
+
             # Determine notification method based on count
-            if len(new_listings) == 1:
+            if len(flattened_listings) == 1:
                 logger.info("[*] Sending single listing notification...")
-                success = self.notifier.send_new_listing(new_listings[0])
+                success = self.notifier.send_new_listing(flattened_listings[0])
                 if success:
                     # Record the notification in database
-                    listing_id = new_listings[0].get("listing_id")
+                    listing_id = flattened_listings[0].get("listing_id")
                     if listing_id:
                         self.database.record_notification(listing_id, "telegram")
             else:
-                logger.info(f"[*] Sending {len(new_listings)} listings notification...")
-                success = self.notifier.send_new_listings(new_listings)
+                logger.info(f"[*] Sending {len(flattened_listings)} listings notification...")
+                success = self.notifier.send_new_listings(flattened_listings)
                 if success:
                     # Record notifications for each listing in database
-                    for listing in new_listings:
+                    for listing in flattened_listings:
                         listing_id = listing.get("listing_id")
                         if listing_id:
                             self.database.record_notification(listing_id, "telegram")
 
             if success:
                 logger.info("[OK] Notification sent successfully")
-                return len(new_listings)
+                return len(flattened_listings)
             else:
                 logger.warning("[WARN] Failed to send notification")
                 return 0

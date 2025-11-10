@@ -464,7 +464,25 @@ class MyAutoScraper:
                 logger.debug("[OK] Found vehicle data in heading")
                 listing_data["vehicle"].update(heading_data)
 
-            # STRATEGY 1B: Try to extract data from React app embedded data
+            # STRATEGY 1B: Extract Georgian-labeled fields (comprehensive field extraction)
+            logger.debug("[*] Attempting Georgian labeled field extraction...")
+            georgian_data = MyAutoParser.extract_georgian_labeled_fields(soup)
+
+            if georgian_data:
+                logger.debug("[OK] Found Georgian labeled fields")
+                # Distribute fields to appropriate sections
+                for field, value in georgian_data.items():
+                    if field in ['make', 'model', 'year', 'category', 'color', 'interior_color',
+                                 'interior_material', 'wheel_position', 'doors', 'seats', 'body_type', 'drive_type']:
+                        listing_data["vehicle"][field] = value
+                    elif field in ['fuel_type', 'displacement_liters', 'cylinders', 'transmission', 'power_hp']:
+                        listing_data["engine"][field] = value
+                    elif field in ['mileage_km', 'mileage_unit', 'customs_cleared', 'technical_inspection_passed', 'has_catalytic_converter']:
+                        listing_data["condition"][field] = value
+                    elif field in ['price', 'exchange_possible', 'negotiable', 'installment_available']:
+                        listing_data["pricing"][field] = value
+
+            # STRATEGY 1C: Try to extract data from React app embedded data
             logger.debug("[*] Attempting React data extraction...")
             react_data = MyAutoParser.extract_react_data_from_scripts(html)
 

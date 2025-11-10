@@ -32,7 +32,9 @@
       "Bash(playwright install:*)",
       "Bash(timeout:*)",
       "Bash(timeout 10 python:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(LOG_LEVEL=DEBUG timeout 120 python:*)",
+      "Bash(iconv:*)"
     ],
     "deny": [],
     "ask": []

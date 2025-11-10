@@ -252,6 +252,7 @@ class DatabaseManager:
                 return False
 
             # Prepare vehicle details (flatten nested structure for API)
+            # New schema uses VARCHAR for all fields - convert values to strings
             vehicle = listing_data.get("vehicle", {})
             engine = listing_data.get("engine", {})
             condition = listing_data.get("condition", {})
@@ -259,62 +260,79 @@ class DatabaseManager:
             seller = listing_data.get("seller", {})
             media = listing_data.get("media", {})
 
-            # Helper to convert booleans to integers (for database compatibility)
-            def to_int(value):
+            # Helper to convert values to strings for VARCHAR fields
+            def to_str(value):
+                """Convert any value to string, handling None and booleans"""
+                if value is None:
+                    return None
                 if isinstance(value, bool):
-                    return 1 if value else 0
-                return value
+                    return "1" if value else "0"
+                return str(value)
 
             vehicle_details = {
                 "listing_id": listing_id,
-                "make": vehicle.get("make"),
-                "make_id": vehicle.get("make_id"),
-                "model": vehicle.get("model"),
-                "model_id": vehicle.get("model_id"),
-                "modification": vehicle.get("modification"),
-                "year": vehicle.get("year"),
-                "vin": vehicle.get("vin"),
-                "body_type": vehicle.get("body_type"),
-                "color": vehicle.get("color"),
-                "interior_color": vehicle.get("interior_color"),
-                "doors": vehicle.get("doors"),
-                "seats": vehicle.get("seats"),
-                "wheel_position": vehicle.get("wheel_position"),
-                "drive_type": vehicle.get("drive_type"),
-                "fuel_type": engine.get("fuel_type"),
-                "fuel_type_id": engine.get("fuel_type_id"),
-                "displacement_liters": engine.get("displacement_liters"),
-                "transmission": engine.get("transmission"),
-                "power_hp": engine.get("power_hp"),
-                "cylinders": engine.get("cylinders"),
-                "status": condition.get("status"),
-                "mileage_km": condition.get("mileage_km"),
-                "mileage_unit": condition.get("mileage_unit"),
-                "customs_cleared": to_int(condition.get("customs_cleared")),
-                "technical_inspection_passed": to_int(condition.get("technical_inspection_passed")),
-                "condition_description": condition.get("condition_description"),
-                "price": pricing.get("price"),
-                "currency": pricing.get("currency"),
-                "currency_id": pricing.get("currency_id"),
-                "negotiable": to_int(pricing.get("negotiable")),
-                "installment_available": to_int(pricing.get("installment_available")),
-                "exchange_possible": to_int(pricing.get("exchange_possible")),
-                "seller_type": seller.get("seller_type"),
-                "seller_name": seller.get("seller_name"),
-                "seller_phone": seller.get("seller_phone"),
-                "location": seller.get("location"),
-                "location_id": seller.get("location_id"),
-                "is_dealer": to_int(seller.get("is_dealer")),
-                "dealer_id": seller.get("dealer_id"),
-                "primary_image_url": media.get("primary_image_url"),
-                "photo_count": media.get("photo_count"),
-                "video_url": media.get("video_url"),
-                "posted_date": listing_data.get("posted_date"),
-                "last_updated": listing_data.get("last_updated"),
-                "url": listing_data.get("url"),
-                "view_count": listing_data.get("view_count"),
-                "is_vip": to_int(listing_data.get("is_vip")),
-                "is_featured": to_int(listing_data.get("is_featured"))
+                # Vehicle identification
+                "make": to_str(vehicle.get("make")),
+                "model": to_str(vehicle.get("model")),
+                "year": to_str(vehicle.get("year")),
+                "category": to_str(vehicle.get("category")),
+                "vin": to_str(vehicle.get("vin")),
+                "modification": to_str(vehicle.get("modification")),
+
+                # Engine/Mechanical
+                "fuel_type": to_str(engine.get("fuel_type")),
+                "displacement_liters": to_str(engine.get("displacement_liters")),
+                "cylinders": to_str(engine.get("cylinders")),
+                "transmission": to_str(engine.get("transmission")),
+                "power_hp": to_str(engine.get("power_hp")),
+                "drive_type": to_str(vehicle.get("drive_type")),
+
+                # Body/Appearance
+                "body_type": to_str(vehicle.get("body_type")),
+                "color": to_str(vehicle.get("color")),
+                "interior_color": to_str(vehicle.get("interior_color")),
+                "interior_material": to_str(vehicle.get("interior_material")),
+                "wheel_position": to_str(vehicle.get("wheel_position")),
+                "doors": to_str(vehicle.get("doors")),
+                "seats": to_str(vehicle.get("seats")),
+
+                # Condition
+                "status": to_str(condition.get("status")),
+                "mileage_km": to_str(condition.get("mileage_km")),
+                "mileage_unit": to_str(condition.get("mileage_unit")),
+                "customs_cleared": to_str(condition.get("customs_cleared")),
+                "technical_inspection_passed": to_str(condition.get("technical_inspection_passed")),
+                "condition_description": to_str(condition.get("condition_description")),
+
+                # Pricing
+                "price": to_str(pricing.get("price")),
+                "currency": to_str(pricing.get("currency")),
+                "negotiable": to_str(pricing.get("negotiable")),
+                "installment_available": to_str(pricing.get("installment_available")),
+                "exchange_possible": to_str(pricing.get("exchange_possible")),
+
+                # Special attributes
+                "has_catalytic_converter": to_str(vehicle.get("has_catalytic_converter")),
+
+                # Seller information
+                "seller_type": to_str(seller.get("seller_type")),
+                "seller_name": to_str(seller.get("seller_name")),
+                "seller_phone": to_str(seller.get("seller_phone")),
+                "location": to_str(seller.get("location")),
+                "is_dealer": to_str(seller.get("is_dealer")),
+
+                # Media
+                "primary_image_url": to_str(media.get("primary_image_url")),
+                "photo_count": to_str(media.get("photo_count")),
+                "video_url": to_str(media.get("video_url")),
+
+                # Metadata
+                "posted_date": to_str(listing_data.get("posted_date")),
+                "last_updated": to_str(listing_data.get("last_updated")),
+                "url": to_str(listing_data.get("url")),
+                "view_count": to_str(listing_data.get("view_count")),
+                "is_vip": to_str(listing_data.get("is_vip")),
+                "is_featured": to_str(listing_data.get("is_featured"))
             }
 
             # Remove None values to avoid null constraint violations

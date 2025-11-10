@@ -441,6 +441,97 @@ class MyAutoParser:
             return None
 
     @staticmethod
+    def extract_georgian_labeled_fields(soup) -> Optional[Dict]:
+        """
+        Extract vehicle fields from Georgian-labeled divs
+        Handles structure: divs containing "label:value" text
+        All values returned as strings for VARCHAR compatibility
+
+        Args:
+            soup: BeautifulSoup object
+
+        Returns:
+            Dict with extracted fields or None
+        """
+        try:
+            data = {}
+
+            # Georgian label to field mapping
+            label_mapping = {
+                'მწარმოებელი': 'make',
+                'მოდელი': 'model',
+                'წელი': 'year',
+                'კატეგორია': 'category',
+                'გარბენი': 'mileage_km',
+                'საწვავის ტიპი': 'fuel_type',
+                'ძრავის მოცულობა': 'displacement_liters',
+                'ძრავი': 'displacement_liters',
+                'ცილინდრები': 'cylinders',
+                'გადაცემათა კოლოფი': 'transmission',
+                'კოლოფი': 'transmission',
+                'წამყვანი თვლები': 'drive_type',
+                'კარები': 'doors',
+                'აირბეგი': 'seats',
+                'საჭე': 'wheel_position',
+                'ფერი': 'color',
+                'სალონის ფერი': 'interior_color',
+                'სალონის მასალა': 'interior_material',
+                'ფასი': 'price',
+                'განბაჟება': 'customs_cleared',
+                'ტექ. დათვალიერება': 'technical_inspection_passed',
+                'კატალიზატორი': 'has_catalytic_converter',
+                'გაცვლა': 'exchange_possible',
+            }
+
+            # Find all divs that contain Georgian labels with colons
+            divs = soup.find_all('div')
+
+            for div in divs:
+                text = div.get_text(strip=True)
+
+                # Only process if it contains a colon
+                if ':' not in text:
+                    continue
+
+                # Split on first colon
+                parts = text.split(':', 1)
+                if len(parts) != 2:
+                    continue
+
+                label = parts[0].strip()
+                value = parts[1].strip()
+
+                # Skip if empty
+                if not label or not value:
+                    continue
+
+                # Check if this is a known Georgian label
+                if label not in label_mapping:
+                    continue
+
+                field_name = label_mapping[label]
+
+                # Don't overwrite if already found
+                if field_name in data:
+                    continue
+
+                # For some fields, extract just the number
+                if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
+                    match = re.search(r'\d+\.?\d*', value)
+                    if match:
+                        value = match.group(0)
+
+                # Store as string
+                data[field_name] = value
+                logger.debug(f"[OK] Extracted {field_name}: {value}")
+
+            return data if data else None
+
+        except Exception as e:
+            logger.debug(f"Error extracting Georgian labeled fields: {e}")
+            return None
+
+    @staticmethod
     def extract_react_data_from_scripts(html: str) -> Optional[Dict]:
         """
         Extract data embedded in React app script tags

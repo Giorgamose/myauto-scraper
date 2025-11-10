@@ -213,20 +213,20 @@ class TelegramNotificationManager:
             # Otherwise use the combined title field
             title = car.get('title', 'Unknown Vehicle')
 
-        # Format price with thousands separator
+        # Format price with Georgian Lari symbol (₾)
         price = car.get('price')
         if not price:
             price_str = 'N/A'
         elif isinstance(price, (int, float)):
-            price_str = f"${price:,.0f}"
+            price_str = f"₾{price:,.0f}"
         else:
             # Try to parse string price
             try:
                 price_num = int(str(price).replace(',', '').replace(' ', ''))
                 if price_num > 100:  # Likely a real price
-                    price_str = f"${price_num:,.0f}"
+                    price_str = f"₾{price_num:,.0f}"
                 else:
-                    price_str = f"${price}"
+                    price_str = f"₾{price}"
             except (ValueError, AttributeError, TypeError):
                 price_str = 'N/A'
 
@@ -260,21 +260,8 @@ class TelegramNotificationManager:
         # Customs status indicator
         customs_status = '✅ Customs Cleared' if car.get('customs_cleared') else '⚠️ Customs Status Unknown'
 
-        # Build base message with price display (support both USD and GEL)
-        currency = car.get('currency', 'USD')
-        price_display = f"{price_str} {currency}" if price_str != 'N/A' else price_str
-
-        # Add both USD and GEL prices if available
-        price_usd = car.get('price_usd')
-        price_gel = car.get('price_gel')
-
-        if price_usd and price_gel:
-            try:
-                usd_val = int(str(price_usd).replace(',', '').replace(' ', ''))
-                gel_val = int(str(price_gel).replace(',', '').replace(' ', ''))
-                price_display = f"${usd_val:,} | ₾{gel_val:,}"
-            except (ValueError, AttributeError, TypeError):
-                pass  # Fall back to original price_display
+        # Build base message with GEL price display
+        price_display = price_str
 
         message = f"""
 <b>🚗 NEW CAR LISTING!</b>
@@ -327,40 +314,20 @@ class TelegramNotificationManager:
                 # Otherwise use the combined title field
                 title = car.get('title', 'Unknown Vehicle')
 
-            # Format price safely (support both USD and GEL)
+            # Format price with Georgian Lari symbol (₾)
             price = car.get('price')
-            price_usd = car.get('price_usd')
-            price_gel = car.get('price_gel')
-
-            if price_usd and price_gel:
-                try:
-                    usd_val = int(str(price_usd).replace(',', '').replace(' ', ''))
-                    gel_val = int(str(price_gel).replace(',', '').replace(' ', ''))
-                    price_str = f"${usd_val:,} | ₾{gel_val:,}"
-                except (ValueError, AttributeError, TypeError):
-                    # Fall back to single price
-                    if not price:
-                        price_str = 'N/A'
-                    elif isinstance(price, (int, float)):
-                        price_str = f"${price:,.0f}"
-                    else:
-                        try:
-                            price_num = int(str(price).replace(',', '').replace(' ', ''))
-                            price_str = f"${price_num:,.0f}" if price_num > 100 else f"${price}"
-                        except (ValueError, AttributeError, TypeError):
-                            price_str = 'N/A'
-            elif not price:
+            if not price:
                 price_str = 'N/A'
             elif isinstance(price, (int, float)):
-                price_str = f"${price:,.0f}"
+                price_str = f"₾{price:,.0f}"
             else:
                 # Try to parse string price
                 try:
                     price_num = int(str(price).replace(',', '').replace(' ', ''))
                     if price_num > 100:
-                        price_str = f"${price_num:,.0f}"
+                        price_str = f"₾{price_num:,.0f}"
                     else:
-                        price_str = f"${price}"
+                        price_str = f"₾{price}"
                 except (ValueError, AttributeError, TypeError):
                     price_str = 'N/A'
 

@@ -287,13 +287,11 @@ class CarListingMonitor:
             "customs_cleared": condition.get("customs_cleared"),
         })
 
-        # Flatten pricing section (include both USD and GEL prices)
+        # Flatten pricing section (GEL currency)
         pricing = listing.get("pricing", {})
         flattened.update({
             "price": pricing.get("price"),
-            "price_usd": pricing.get("price_usd"),
-            "price_gel": pricing.get("price_gel"),
-            "currency": pricing.get("currency") or "USD",
+            "currency": pricing.get("currency") or "GEL",
             "exchange_possible": pricing.get("exchange_possible"),
         })
 

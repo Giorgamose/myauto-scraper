@@ -23,6 +23,9 @@ except Exception as e:
 class DatabaseManager:
     """Manage Supabase database operations using REST API instead of direct PostgreSQL"""
 
+    # Flag to track if SSL verification should be disabled
+    _ssl_verify = True
+
     def __init__(self, project_url: str = None, api_key: str = None):
         """
         Initialize Supabase REST API database connection
@@ -55,7 +58,7 @@ class DatabaseManager:
 
         self.base_url = f"{self.project_url}/rest/v1"
         self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "apikey": self.api_key,  # Supabase REST API expects 'apikey' header
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
         }
@@ -63,11 +66,35 @@ class DatabaseManager:
         logger.info(f"[*] Supabase REST API configured: {self.project_url}")
         self._test_connection()
 
+    def _make_request(self, method, url, **kwargs):
+        """
+        Make HTTP request with SSL verification fallback
+
+        If SSL verification fails (common with corporate proxies),
+        automatically retry without verification
+        """
+        try:
+            # First attempt with SSL verification enabled
+            kwargs['verify'] = self._ssl_verify
+            return requests.request(method, url, **kwargs)
+        except requests.exceptions.SSLError as ssl_error:
+            # If SSL fails and verification is enabled, retry without it
+            if self._ssl_verify:
+                logger.warning(f"[WARN] SSL verification failed, retrying without verification")
+                logger.warning(f"[WARN] This may indicate a corporate proxy or firewall")
+                DatabaseManager._ssl_verify = False  # Update class flag
+                kwargs['verify'] = False
+                return requests.request(method, url, **kwargs)
+            else:
+                raise
+
     def _test_connection(self):
         """Test connectivity to Supabase REST API"""
         try:
             logger.info("[*] Testing Supabase REST API connection...")
-            response = requests.get(
+
+            response = self._make_request(
+                'GET',
                 f"{self.base_url}/seen_listings?limit=1",
                 headers=self.headers,
                 timeout=10
@@ -85,30 +112,34 @@ class DatabaseManager:
 
     def initialize_schema(self):
         """
-        Create database tables if they don't exist
-        Uses raw SQL execution via Supabase RPC or direct table creation via REST API
+        Verify database schema exists
+        Note: Tables must be created manually using Supabase SQL Editor
+        See setup_database.py for instructions
 
         Returns:
-            True if successful, False if failed
+            True if tables exist, False if missing
         """
         try:
             if self.connection_failed:
                 logger.error("[ERROR] Database connection failed - schema initialization skipped")
                 return False
 
-            logger.info("[*] Initializing database schema...")
+            logger.info("[*] Checking database schema...")
 
-            # Check if tables exist by trying to query them
-            tables_to_create = [
+            # Check if required tables exist
+            required_tables = [
                 "seen_listings",
                 "vehicle_details",
                 "search_configurations",
                 "notifications_sent"
             ]
 
-            for table in tables_to_create:
+            missing_tables = []
+
+            for table in required_tables:
                 try:
-                    response = requests.get(
+                    response = self._make_request(
+                        'GET',
                         f"{self.base_url}/{table}?limit=1",
                         headers=self.headers,
                         timeout=10
@@ -116,16 +147,23 @@ class DatabaseManager:
                     if response.status_code == 200:
                         logger.debug(f"[OK] Table {table} exists")
                     elif response.status_code == 404:
-                        logger.warning(f"[WARN] Table {table} does not exist. Manual creation required.")
+                        logger.error(f"[ERROR] Table {table} does not exist")
+                        missing_tables.append(table)
                 except Exception as e:
-                    logger.warning(f"[WARN] Could not verify table {table}: {e}")
+                    logger.error(f"[ERROR] Could not verify table {table}: {e}")
+                    missing_tables.append(table)
 
-            logger.info("[OK] Database schema check completed")
+            if missing_tables:
+                logger.error(f"[ERROR] Missing database tables: {', '.join(missing_tables)}")
+                logger.error("[ERROR] Please run: python setup_database.py")
+                logger.error("[ERROR] Then follow the instructions in setup_database.sql")
+                return False
+
+            logger.info("[OK] All required tables exist")
             return True
 
         except Exception as e:
             logger.error(f"[ERROR] Schema initialization failed: {e}")
-            self.connection_failed = True
             return False
 
     def has_seen_listing(self, listing_id: str) -> bool:
@@ -142,7 +180,8 @@ class DatabaseManager:
             if self.connection_failed:
                 return False
 
-            response = requests.get(
+            response = self._make_request(
+                'GET',
                 f"{self.base_url}/seen_listings?id=eq.{listing_id}&limit=1",
                 headers=self.headers,
                 timeout=10
@@ -191,7 +230,8 @@ class DatabaseManager:
             }
 
             # Insert into seen_listings
-            response = requests.post(
+            response = self._make_request(
+                'POST',
                 f"{self.base_url}/seen_listings",
                 headers={**self.headers, "Prefer": "return=minimal"},
                 json=seen_listing,
@@ -266,7 +306,8 @@ class DatabaseManager:
             vehicle_details = {k: v for k, v in vehicle_details.items() if v is not None}
 
             # Insert vehicle details
-            response = requests.post(
+            response = self._make_request(
+                'POST',
                 f"{self.base_url}/vehicle_details",
                 headers={**self.headers, "Prefer": "return=minimal"},
                 json=vehicle_details,
@@ -298,7 +339,8 @@ class DatabaseManager:
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
 
             # First, count how many will be deleted
-            response = requests.get(
+            response = self._make_request(
+                'GET',
                 f"{self.base_url}/seen_listings?created_at=lt.{cutoff_date}&select=id",
                 headers=self.headers,
                 timeout=10
@@ -312,7 +354,8 @@ class DatabaseManager:
 
             if count > 0:
                 # Delete old listings (cascade should delete vehicle details too)
-                response = requests.delete(
+                response = self._make_request(
+                    'DELETE',
                     f"{self.base_url}/seen_listings?created_at=lt.{cutoff_date}",
                     headers=self.headers,
                     timeout=10
@@ -338,7 +381,8 @@ class DatabaseManager:
         """
         try:
             # Get total count
-            response = requests.get(
+            response = self._make_request(
+                'GET',
                 f"{self.base_url}/seen_listings?select=id",
                 headers={**self.headers, "Prefer": "count=exact"},
                 timeout=10
@@ -354,7 +398,8 @@ class DatabaseManager:
 
             # Get recent count (24h)
             one_day_ago = (datetime.now() - timedelta(days=1)).isoformat()
-            response = requests.get(
+            response = self._make_request(
+                'GET',
                 f"{self.base_url}/seen_listings?created_at=gt.{one_day_ago}&select=id",
                 headers={**self.headers, "Prefer": "count=exact"},
                 timeout=10

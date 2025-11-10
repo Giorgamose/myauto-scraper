@@ -646,18 +646,32 @@ class MyAutoScraper:
                 import re
 
                 # Collect all possible prices with their amounts
-                prices_found = {}  # {amount: (price_str, currency)}
+                prices_found = {}  # {amount: price_str}
 
-                # Pattern: any number that looks like a price (4-6 digits)
-                all_prices = re.findall(r'(\d{1,3}(?:[,\s]\d{3})+)', full_text)
+                # Pattern 1: Numbers with separators (15,500 or 15 500)
+                all_prices_formatted = re.findall(r'(\d{1,3}(?:[,\s]\d{3})+)', full_text)
 
-                for price_raw in all_prices:
+                # Pattern 2: Numbers without separators (15500, 25200, etc) - 4 to 7 digits
+                # But exclude things like IDs or years (too many false positives)
+                # Valid price range: 5000 to 10000000
+                all_prices_raw = re.findall(r'\b(\d{4,7})\b', full_text)
+
+                # Process formatted prices
+                for price_raw in all_prices_formatted:
                     price_clean = price_raw.replace(' ', '').replace(',', '')
                     if price_clean.isdigit() and 5000 < int(price_clean) < 10000000:
-                        # Valid price range
                         amount = int(price_clean)
                         if amount not in prices_found:
                             prices_found[amount] = price_clean
+
+                # Process raw numbers
+                for price_raw in all_prices_raw:
+                    if price_raw.isdigit() and 5000 < int(price_raw) < 10000000:
+                        # Additional filter: look at context to ensure it's a price
+                        # Prices typically appear in specific contexts
+                        amount = int(price_raw)
+                        if amount not in prices_found:
+                            prices_found[amount] = price_raw
 
                 if prices_found:
                     # IMPORTANT: USD is always less than GEL
@@ -669,7 +683,7 @@ class MyAutoScraper:
                     listing_data["pricing"]["price"] = price_str
                     listing_data["pricing"]["currency"] = "USD"  # Lower price = USD
                     listing_data["pricing"]["currency_id"] = 1
-                    logger.debug(f"[SMART EXTRACTION] Found multiple prices: {list(prices_found.keys())}, selected lowest (USD): {price_str}")
+                    logger.debug(f"[SMART EXTRACTION] Found prices: {sorted(prices_found.keys())}, selected lowest (USD): {price_str}")
                 else:
                     # Fallback to pattern-based extraction if no prices found
                     logger.debug("[*] No direct prices found, trying pattern-based extraction...")

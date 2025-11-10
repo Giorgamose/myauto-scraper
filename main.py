@@ -45,13 +45,12 @@ logger = logging.getLogger(__name__)
 class CarListingMonitor:
     """Main orchestrator for car listing monitoring workflow"""
 
-    def __init__(self, config_path: str = None, db_url: str = None):
+    def __init__(self, config_path: str = None):
         """
         Initialize the monitoring system
 
         Args:
             config_path: Path to config.json
-            db_url: Supabase PostgreSQL database URL (from env if None)
         """
 
         self.config_path = config_path or get_config_path()
@@ -59,12 +58,6 @@ class CarListingMonitor:
         self.database = None
         self.scraper = None
         self.notifier = None
-
-        # Load Supabase database URL from environment
-        if db_url is None:
-            db_url = os.getenv("DATABASE_URL")
-
-        self.db_url = db_url
 
         # Statistics tracking
         self.stats = {
@@ -102,12 +95,8 @@ class CarListingMonitor:
 
             # 3. Initialize database
             logger.info("[*] Initializing database connection...")
-            if not self.db_url:
-                logger.error("[ERROR] DATABASE_URL environment variable required")
-                return False
-
             try:
-                self.database = DatabaseManager(self.db_url)
+                self.database = DatabaseManager()
                 self.database.initialize_schema()
                 logger.info("[OK] Database initialized")
             except Exception as e:

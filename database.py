@@ -22,9 +22,22 @@ except Exception as e:
 class DatabaseManager:
     """Manage Supabase PostgreSQL database operations for car listings"""
 
-    def __init__(self, db_url: str):
-        """Initialize database connection - Args: db_url: PostgreSQL connection string from Supabase"""
-        self.db_url = db_url
+    def __init__(self, user: str = None, password: str = None, host: str = None, port: str = None, dbname: str = None):
+        """
+        Initialize database connection with individual parameters
+
+        Args:
+            user: PostgreSQL username
+            password: PostgreSQL password
+            host: Database host
+            port: Database port (default: 5432)
+            dbname: Database name
+        """
+        self.user = user or os.getenv("DB_USER")
+        self.password = password or os.getenv("DB_PASSWORD")
+        self.host = host or os.getenv("DB_HOST")
+        self.port = port or os.getenv("DB_PORT", "5432")
+        self.dbname = dbname or os.getenv("DB_NAME")
         self.conn = None
         self.connection_failed = False
 
@@ -35,7 +48,13 @@ class DatabaseManager:
 
         try:
             logger.info("[*] Connecting to Supabase PostgreSQL database...")
-            self.conn = psycopg2.connect(db_url)
+            self.conn = psycopg2.connect(
+                user=self.user,
+                password=self.password,
+                host=self.host,
+                port=self.port,
+                dbname=self.dbname
+            )
             logger.info("[OK] Connected to Supabase database successfully")
         except Exception as e:
             import traceback

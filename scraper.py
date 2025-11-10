@@ -506,6 +506,10 @@ class MyAutoScraper:
                         listing_data["condition"][field] = value
                     elif field in ['price', 'exchange_possible', 'negotiable', 'installment_available']:
                         listing_data["pricing"][field] = value
+                        # If price is extracted, set currency to GEL
+                        if field == 'price' and value:
+                            listing_data["pricing"]["currency"] = "GEL"
+                            listing_data["pricing"]["currency_id"] = 2
 
             # STRATEGY 1C: Try to extract data from React app embedded data
             logger.debug("[*] Attempting React data extraction...")

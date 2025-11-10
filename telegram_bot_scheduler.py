@@ -249,6 +249,14 @@ class TelegramBotScheduler(threading.Thread):
             return
 
         try:
+            # Check if channel notification is enabled
+            notification_channel = os.getenv("TELEGRAM_NOTIFICATION_CHANNEL_ID", "").strip()
+
+            if notification_channel:
+                # Send to channel instead of individual chat
+                return self._send_notifications_to_channel(notification_channel, listings)
+
+            # Otherwise send to individual chat
             logger.info(f"[*] Sending {len(listings)} notification(s) to chat {chat_id}")
 
             # Format message with listings
@@ -267,6 +275,37 @@ class TelegramBotScheduler(threading.Thread):
 
         except Exception as e:
             logger.error(f"[ERROR] Error sending notifications: {e}")
+
+    def _send_notifications_to_channel(self, channel_id: str, listings: List[Dict]):
+        """
+        Send notifications to a Telegram channel instead of individual chats
+
+        Args:
+            channel_id: Telegram channel ID or username (e.g., '-1001234567890' or '@channel_name')
+            listings: List of new listings to notify about
+        """
+        if not listings or not self.bot_backend:
+            return
+
+        try:
+            logger.info(f"[*] Sending {len(listings)} notification(s) to channel {channel_id}")
+
+            # Format message with listings
+            if len(listings) == 1:
+                message = self._format_single_listing_notification(listings[0])
+            else:
+                message = self._format_multiple_listings_notification(listings)
+
+            # Send to channel
+            success = self.bot_backend.send_message(channel_id, message)
+
+            if success:
+                logger.info(f"[OK] Notification sent to channel {channel_id}")
+            else:
+                logger.warning(f"[WARN] Failed to send notification to channel {channel_id}")
+
+        except Exception as e:
+            logger.error(f"[ERROR] Error sending to channel: {e}")
 
     @staticmethod
     def _format_single_listing_notification(listing: Dict) -> str:

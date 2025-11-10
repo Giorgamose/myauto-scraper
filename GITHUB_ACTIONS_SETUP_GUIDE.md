@@ -40,6 +40,12 @@ Add these secrets to GitHub (copy from your `.env.local` file):
 | `TELEGRAM_BOT_TOKEN` | Your bot token from BotFather | `.env.local`: `TELEGRAM_BOT_TOKEN=` |
 | `TELEGRAM_CHAT_ID` | Your Telegram chat ID | `.env.local`: `TELEGRAM_CHAT_ID=` |
 
+### Optional Secrets:
+
+| Secret Name | Value | Purpose |
+|---|---|---|
+| `TELEGRAM_NOTIFICATION_CHANNEL_ID` | Your Telegram channel ID | Send all notifications to a channel instead of individual chats |
+
 **⚠️ IMPORTANT:**
 - Never commit `.env.local` to Git (it's in `.gitignore`)
 - Secrets are encrypted and only visible to GitHub Actions
@@ -54,6 +60,30 @@ Add these secrets to GitHub (copy from your `.env.local` file):
 4. Value: https://xxxxx.supabase.co
 5. Add secret
 ```
+
+## Step 1.5: Optional - Configure Channel Notifications
+
+If you want all periodic search results sent to a **Telegram channel** instead of individual chats:
+
+### Get Your Channel ID:
+
+1. Create a Telegram channel (if you don't have one)
+2. Add your bot as an admin to the channel
+3. Send any message to the channel
+4. Open Telegram and go to **@userinfobot**
+5. Send `/start` to the bot
+6. Forward the message from your channel to @userinfobot
+7. The bot will show your channel ID (format: `-100xxxxxxxxxx`)
+8. Add this as a secret: `TELEGRAM_NOTIFICATION_CHANNEL_ID`
+
+### Why Use a Channel?
+
+| Aspect | Individual Chat | Channel |
+|--------|---|---|
+| Notifications go to | Each user separately | One shared channel |
+| Setup | Simple | Need channel admin |
+| Visibility | Private to each user | Public/shared |
+| Best for | Personal monitoring | Team/shared monitoring |
 
 ## Step 2: Enable GitHub Actions
 

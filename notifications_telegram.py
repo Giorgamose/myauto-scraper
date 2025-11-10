@@ -182,8 +182,17 @@ class TelegramNotificationManager:
         if len(cars_list) == 1:
             return self.send_new_listing_notification(cars_list[0])
 
-        message = self._format_multiple_listings(cars_list)
-        return self.send_message(message)
+        # Split listings into batches to avoid exceeding Telegram's 4096 character limit
+        # Each batch will be sent as a separate message
+        batches = self._split_listings_into_batches(cars_list, max_listings_per_batch=10)
+        all_sent = True
+
+        for batch_num, batch in enumerate(batches, 1):
+            message = self._format_multiple_listings(batch, batch_num=batch_num, total_batches=len(batches), total_listings=len(cars_list))
+            if not self.send_message(message):
+                all_sent = False
+
+        return all_sent
 
     def send_status_notification(self, num_listings_checked=0):
         """Send heartbeat/status notification"""
@@ -294,14 +303,42 @@ class TelegramNotificationManager:
         return message.strip()
 
     @staticmethod
-    def _format_multiple_listings(cars_list):
-        """Format multiple listings for Telegram"""
+    def _split_listings_into_batches(cars_list, max_listings_per_batch=10):
+        """Split listings into batches to avoid exceeding Telegram's 4096 character limit
+
+        Args:
+            cars_list: List of car dictionaries
+            max_listings_per_batch: Maximum listings per batch (default: 10)
+
+        Returns:
+            List of batches, where each batch is a list of car dictionaries
+        """
+        batches = []
+        for i in range(0, len(cars_list), max_listings_per_batch):
+            batches.append(cars_list[i:i + max_listings_per_batch])
+        return batches
+
+    @staticmethod
+    def _format_multiple_listings(cars_list, batch_num=None, total_batches=None, total_listings=None):
+        """Format multiple listings for Telegram
+
+        Args:
+            cars_list: List of car dictionaries to format
+            batch_num: Current batch number (for multi-batch messages)
+            total_batches: Total number of batches (for multi-batch messages)
+            total_listings: Total number of listings across all batches
+        """
 
         # Use correct singular/plural form
         listing_word = "LISTING" if len(cars_list) == 1 else "LISTINGS"
-        message = f"<b>🎉 {len(cars_list)} NEW CAR {listing_word}!</b>\n\n"
 
-        for i, car in enumerate(cars_list[:10], 1):
+        # Add batch information if this is a multi-batch message
+        if batch_num and total_batches and total_batches > 1:
+            message = f"<b>🎉 {total_listings} NEW CAR LISTINGS!</b>\n<i>(Batch {batch_num} of {total_batches})</i>\n\n"
+        else:
+            message = f"<b>🎉 {len(cars_list)} NEW CAR {listing_word}!</b>\n\n"
+
+        for i, car in enumerate(cars_list, 1):
             # Format title - use individual fields if available, otherwise use title field
             make = car.get('make', '')
             model = car.get('model', '')
@@ -374,9 +411,6 @@ class TelegramNotificationManager:
                     message += f"   📝 {description_short}\n"
 
             message += f"   <a href=\"{url}\">View listing</a>\n\n"
-
-        if len(cars_list) > 10:
-            message += f"<i>...and {len(cars_list) - 10} more listings!</i>\n"
 
         return message.strip()
 

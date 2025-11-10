@@ -283,18 +283,54 @@ class TelegramNotificationManager:
         message = f"<b>🎉 {len(cars_list)} NEW CAR LISTINGS!</b>\n\n"
 
         for i, car in enumerate(cars_list[:10], 1):
+            # Format title - use individual fields if available, otherwise use title field
+            make = car.get('make', '')
+            model = car.get('model', '')
+            year = car.get('year', '')
+
+            # If we have make/model/year, use them
+            if make or model or year:
+                title = f"{make} {model} {year}".strip()
+            else:
+                # Otherwise use the combined title field
+                title = car.get('title', 'Unknown Vehicle')
+
             # Format price safely
             price = car.get('price', 'N/A')
-            price_str = f"${price:,.0f}" if isinstance(price, (int, float)) else f"${price}"
+            if isinstance(price, (int, float)):
+                price_str = f"${price:,.0f}"
+            else:
+                # Try to parse string price
+                try:
+                    price_num = int(price.replace(',', '').replace(' ', ''))
+                    if price_num > 100:
+                        price_str = f"${price_num:,.0f}"
+                    else:
+                        price_str = f"${price}"
+                except (ValueError, AttributeError):
+                    price_str = f"${price}"
 
             # Format mileage safely
             mileage = car.get('mileage_km', 'N/A')
-            mileage_str = f"{mileage:,.0f}" if isinstance(mileage, (int, float)) else f"{mileage}"
+            if isinstance(mileage, (int, float)):
+                mileage_str = f"{mileage:,.0f}"
+            else:
+                # Try to parse string mileage
+                try:
+                    mileage_num = int(mileage.replace(',', '').replace(' ', ''))
+                    mileage_str = f"{mileage_num:,.0f}"
+                except (ValueError, AttributeError, TypeError):
+                    mileage_str = f"{mileage}"
 
-            message += f"<b>{i}. {car.get('make', 'Unknown')} {car.get('model', '')} {car.get('year', '')}</b>\n"
+            # Ensure URL is properly formatted
+            url = car.get('url', '#')
+            if url and not url.startswith('http'):
+                url = f"https://www.myauto.ge{url}"
+
+            message += f"<b>{i}. {title}</b>\n"
             message += f"   💰 {price_str} | 📍 {car.get('location', 'N/A')}\n"
             message += f"   🛣️ {mileage_str} km | ⛽ {car.get('fuel_type', 'N/A')}\n"
-            message += f"   <a href=\"{car.get('url', '#')}\">View listing</a>\n\n"
+            message += f"   <a href=\"{url}\">View listing</a>\n\n"
 
         if len(cars_list) > 10:
             message += f"<i>...and {len(cars_list) - 10} more listings!</i>\n"

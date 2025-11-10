@@ -329,7 +329,7 @@ class MyAutoParser:
 
                 # Extract mileage - look for km pattern
                 if not mileage_text:
-                    km_match = re.search(r'(\d{1,3}(?:[,\s]\d{3})*)\s*(?:კმ|km)', all_text)
+                    km_match = re.search(r'(\d+(?:[,\s]\d{3})*)\s*(?:კმ|km)', all_text)
                     if km_match:
                         mileage_text = km_match.group(1)
 

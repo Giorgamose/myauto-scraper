@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
-Database Manager - Turso SQLite Database Operations
+Database Manager - Supabase PostgreSQL Operations
 Handles all database interactions for listing storage and retrieval
-
-NOTE: On Windows, Turso database operations may fail due to SSL certificate
-validation issues with aiohttp. This is a known limitation. The scraper still
-works fine with Playwright for fetching listings.
 """
 
 import logging
@@ -15,275 +11,121 @@ import os
 logger = logging.getLogger(__name__)
 
 try:
-    from libsql_client import create_client_sync
-    LIBSQL_AVAILABLE = True
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
 except Exception as e:
-    logger.warning(f"[WARN] Could not import libsql_client: {e}")
-    LIBSQL_AVAILABLE = False
-    create_client_sync = None
-
-# Fix SSL certificate verification issues (Turso cert missing Authority Key Identifier on Windows)
-# This is a known issue where Turso's certificate chain is incomplete
-try:
-    import ssl
-    from aiohttp import TCPConnector
-    import aiohttp
-
-    # Patch aiohttp to use an unverified SSL context
-    original_init = TCPConnector.__init__
-
-    def patched_init(self, *args, **kwargs):
-        """Patched TCPConnector.__init__ that creates unverified SSL context"""
-        # If ssl parameter is not provided or True, create unverified context
-        if 'ssl' not in kwargs or kwargs['ssl'] is True:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            kwargs['ssl'] = ssl_context
-
-        original_init(self, *args, **kwargs)
-
-    TCPConnector.__init__ = patched_init
-    logger.debug("[DEBUG] Patched aiohttp TCPConnector for Turso SSL compatibility")
-
-except Exception as e:
-    logger.debug(f"[DEBUG] Could not patch aiohttp: {e}")
+    logger.warning(f"[WARN] Could not import psycopg2: {e}")
+    PSYCOPG2_AVAILABLE = False
 
 
 class DatabaseManager:
-    """Manage Turso database operations for car listings"""
+    """Manage Supabase PostgreSQL database operations for car listings"""
 
-    def __init__(self, db_url: str, auth_token: str):
-        """
-        Initialize database connection
-
-        Args:
-            db_url: Turso database URL (libsql://...)
-            auth_token: Turso authentication token
-        """
-
+    def __init__(self, db_url: str):
+        """Initialize database connection - Args: db_url: PostgreSQL connection string from Supabase"""
         self.db_url = db_url
-        self.auth_token = auth_token
-        self.client = None
+        self.conn = None
         self.connection_failed = False
 
-        if not LIBSQL_AVAILABLE:
-            logger.warning("[WARN] libsql_client not available - database operations disabled")
-            logger.warning("[WARN] This is expected on some Windows systems due to SSL issues")
-            logger.info("[*] The scraper will still fetch listings from MyAuto.ge using Playwright")
+        if not PSYCOPG2_AVAILABLE:
+            logger.warning("[WARN] psycopg2 not available - install: pip install psycopg2-binary")
             self.connection_failed = True
             return
 
         try:
-            logger.info(f"[*] Connecting to Turso database...")
-            logger.debug(f"    URL: {db_url[:50]}...")
-            logger.debug(f"    Token: {auth_token[:20]}...")
-
-            self.client = create_client_sync(url=db_url, auth_token=auth_token)
-            logger.info("[OK] Connected to Turso database successfully")
+            logger.info("[*] Connecting to Supabase PostgreSQL database...")
+            self.conn = psycopg2.connect(db_url)
+            logger.info("[OK] Connected to Supabase database successfully")
         except Exception as e:
             import traceback
-            logger.error(f"[ERROR] Failed to connect to database: {e}")
-            logger.error(f"    Error type: {type(e).__name__}")
-            logger.debug(f"    Full traceback: {traceback.format_exc()}")
-            logger.warning(f"[WARN] Database operations will be skipped")
-            logger.info("[*] The scraper will still fetch listings from MyAuto.ge using Playwright")
-            # Don't raise - allow the system to continue
-            self.client = None
+            logger.error(f"[ERROR] Failed to connect: {e}")
+            logger.debug(f"[DEBUG] {traceback.format_exc()}")
+            self.conn = None
             self.connection_failed = True
 
-    def _ensure_connected(self):
-        """Ensure we have a valid database connection (retry on demand)"""
-        if self.client is not None:
-            return True
+    def _execute(self, query: str, params=None):
+        """Execute SQL query safely"""
+        if self.connection_failed or not self.conn:
+            return None
 
         try:
-            logger.debug("[*] Attempting to reconnect to Turso database...")
-            import certifi
-            os.environ['SSL_CERT_FILE'] = certifi.where()
-            self.client = create_client_sync(url=self.db_url, auth_token=self.auth_token)
-            logger.info("[OK] Reconnected to Turso database")
-            return True
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, params or [])
+
+            if query.strip().upper().startswith('SELECT'):
+                results = cursor.fetchall()
+                cursor.close()
+                return results
+            else:
+                self.conn.commit()
+                cursor.close()
+                return True
+
         except Exception as e:
-            logger.error(f"[ERROR] Reconnection failed: {e}")
-            logger.error(f"    Error type: {type(e).__name__}")
-            return False
+            if self.conn:
+                self.conn.rollback()
+            logger.error(f"[ERROR] Query failed: {e}")
+            return None
 
     def initialize_schema(self):
-        """Create database schema if not exists (LibSQL minimal schema)"""
-
+        """Create database schema if not exists"""
         try:
             if self.connection_failed:
-                logger.debug("[*] Database unavailable - skipping schema initialization")
+                logger.debug("[*] Database unavailable")
                 return True
 
             logger.info("[*] Initializing database schema...")
 
-            # Ensure we have a connection
-            if not self._ensure_connected():
-                logger.warning("[WARN] Could not establish database connection for schema init")
-                self.connection_failed = True
-                return True  # Non-critical
-
-            # Minimal schema - only what LibSQL truly supports
-            # Remove: UNIQUE, DEFAULT values, BOOLEAN type, and INDEXES
-
-            logger.debug("[*] Creating seen_listings table...")
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS seen_listings (
-                    id TEXT PRIMARY KEY,
-                    created_at TEXT,
-                    last_notified_at TEXT,
-                    notified INTEGER
-                )
-            """)
+            self._execute("CREATE TABLE IF NOT EXISTS seen_listings (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, last_notified_at TEXT, notified INTEGER DEFAULT 0)")
             logger.debug("[OK] seen_listings table created")
 
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS vehicle_details (
-                    listing_id TEXT PRIMARY KEY,
-                    make TEXT,
-                    make_id INTEGER,
-                    model TEXT,
-                    model_id INTEGER,
-                    modification TEXT,
-                    year INTEGER,
-                    vin TEXT,
-                    body_type TEXT,
-                    color TEXT,
-                    interior_color TEXT,
-                    doors INTEGER,
-                    seats INTEGER,
-                    wheel_position TEXT,
-                    drive_type TEXT,
-                    fuel_type TEXT,
-                    fuel_type_id INTEGER,
-                    displacement_liters REAL,
-                    transmission TEXT,
-                    power_hp INTEGER,
-                    cylinders INTEGER,
-                    status TEXT,
-                    mileage_km INTEGER,
-                    mileage_unit TEXT,
-                    customs_cleared INTEGER,
-                    technical_inspection_passed INTEGER,
-                    condition_description TEXT,
-                    price REAL,
-                    currency TEXT,
-                    currency_id INTEGER,
-                    negotiable INTEGER,
-                    installment_available INTEGER,
-                    exchange_possible INTEGER,
-                    seller_type TEXT,
-                    seller_name TEXT,
-                    seller_phone TEXT,
-                    location TEXT,
-                    location_id INTEGER,
-                    is_dealer INTEGER,
-                    dealer_id INTEGER,
-                    primary_image_url TEXT,
-                    photo_count INTEGER,
-                    video_url TEXT,
-                    posted_date TEXT,
-                    last_updated TEXT,
-                    url TEXT,
-                    view_count INTEGER,
-                    is_vip INTEGER,
-                    is_featured INTEGER
-                )
-            """)
+            self._execute("""CREATE TABLE IF NOT EXISTS vehicle_details (
+                listing_id TEXT PRIMARY KEY REFERENCES seen_listings(id) ON DELETE CASCADE,
+                make TEXT, make_id INTEGER, model TEXT, model_id INTEGER, modification TEXT, year INTEGER, vin TEXT,
+                body_type TEXT, color TEXT, interior_color TEXT, doors INTEGER, seats INTEGER, wheel_position TEXT, drive_type TEXT,
+                fuel_type TEXT, fuel_type_id INTEGER, displacement_liters REAL, transmission TEXT, power_hp INTEGER, cylinders INTEGER,
+                status TEXT, mileage_km INTEGER, mileage_unit TEXT, customs_cleared INTEGER, technical_inspection_passed INTEGER,
+                condition_description TEXT, price REAL, currency TEXT, currency_id INTEGER, negotiable INTEGER,
+                installment_available INTEGER, exchange_possible INTEGER, seller_type TEXT, seller_name TEXT, seller_phone TEXT,
+                location TEXT, location_id INTEGER, is_dealer INTEGER, dealer_id INTEGER, primary_image_url TEXT, photo_count INTEGER,
+                video_url TEXT, posted_date TEXT, last_updated TEXT, url TEXT, view_count INTEGER, is_vip INTEGER, is_featured INTEGER
+            )""")
+            logger.debug("[OK] vehicle_details table created")
 
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS search_configurations (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT,
-                    search_url TEXT,
-                    vehicle_make TEXT,
-                    vehicle_model TEXT,
-                    year_from INTEGER,
-                    year_to INTEGER,
-                    price_from REAL,
-                    price_to REAL,
-                    currency_id INTEGER,
-                    is_active INTEGER,
-                    created_at TEXT,
-                    last_checked_at TEXT
-                )
-            """)
+            self._execute("CREATE TABLE IF NOT EXISTS search_configurations (id SERIAL PRIMARY KEY, name TEXT, search_url TEXT, vehicle_make TEXT, vehicle_model TEXT, year_from INTEGER, year_to INTEGER, price_from REAL, price_to REAL, currency_id INTEGER, is_active INTEGER DEFAULT 1, created_at TIMESTAMP DEFAULT NOW(), last_checked_at TIMESTAMP)")
 
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS notifications_sent (
-                    id INTEGER PRIMARY KEY,
-                    listing_id TEXT,
-                    notification_type TEXT,
-                    sent_at TEXT,
-                    telegram_message_id TEXT,
-                    success INTEGER
-                )
-            """)
+            self._execute("CREATE TABLE IF NOT EXISTS notifications_sent (id SERIAL PRIMARY KEY, listing_id TEXT REFERENCES seen_listings(id) ON DELETE CASCADE, notification_type TEXT, sent_at TIMESTAMP DEFAULT NOW(), telegram_message_id TEXT, success INTEGER DEFAULT 0)")
+
+            self._execute("CREATE INDEX IF NOT EXISTS idx_listings_created_at ON seen_listings(created_at)")
+            self._execute("CREATE INDEX IF NOT EXISTS idx_vehicle_make ON vehicle_details(make)")
+            self._execute("CREATE INDEX IF NOT EXISTS idx_notifications_sent_at ON notifications_sent(sent_at)")
 
             logger.info("[OK] Database schema initialized successfully")
             return True
 
         except Exception as e:
-            import traceback
-            logger.debug(f"[*] Schema initialization failed (setting database unavailable): {e}")
-            logger.debug(f"    Error type: {type(e).__name__}")
-            logger.debug(f"    Traceback: {traceback.format_exc()}")
-            # Mark database as unavailable and continue
+            logger.debug(f"[*] Schema init error: {e}")
             self.connection_failed = True
-            return True  # Non-critical - system continues without database
+            return True
 
     def has_seen_listing(self, listing_id: str) -> bool:
-        """
-        Check if listing ID has been seen before
-
-        Args:
-            listing_id: MyAuto.ge listing ID
-
-        Returns:
-            True if seen, False otherwise
-        """
-
+        """Check if listing ID has been seen before"""
         try:
             if self.connection_failed:
-                logger.debug(f"[*] Database unavailable - assuming listing {listing_id} is unseen")
                 return False
 
-            logger.debug(f"[*] Checking if listing {listing_id} has been seen...")
-
-            # Ensure connection is available
-            if not self._ensure_connected():
-                logger.warning(f"[WARN] No database connection - assuming listing is unseen")
-                return False
-
-            result = self.client.execute(
-                "SELECT 1 FROM seen_listings WHERE id = ?",
-                [listing_id]
-            )
-
-            is_seen = len(result) > 0
-            logger.debug(f"[OK] Listing {listing_id} seen status: {is_seen}")
+            result = self._execute("SELECT 1 FROM seen_listings WHERE id = %s", [listing_id])
+            is_seen = len(result) > 0 if result else False
+            logger.debug(f"[OK] Listing {listing_id} seen: {is_seen}")
             return is_seen
 
         except Exception as e:
-            import traceback
-            logger.warning(f"[WARN] Error checking listing {listing_id}: {e}")
-            logger.debug(f"    Error type: {type(e).__name__}")
-            logger.debug(f"    Traceback: {traceback.format_exc()}")
+            logger.warning(f"[WARN] Error checking listing: {e}")
             return False
 
     def store_listing(self, listing_data: dict) -> bool:
-        """
-        Store a new listing in database
-
-        Args:
-            listing_data: Dictionary with listing details
-
-        Returns:
-            True if successful, False otherwise
-        """
-
+        """Store a new listing in database"""
         try:
             listing_id = listing_data.get("listing_id")
 
@@ -292,31 +134,12 @@ class DatabaseManager:
                 return False
 
             if self.connection_failed:
-                logger.debug(f"[*] Database unavailable - skipping store for listing {listing_id}")
                 return False
 
             logger.debug(f"[*] Storing listing: {listing_id}")
 
-            # Ensure database connection is available
-            if not self._ensure_connected():
-                logger.warning(f"[WARN] No database connection - cannot store listing {listing_id}")
-                return False
+            self._execute("INSERT INTO seen_listings (id, created_at, notified) VALUES (%s, %s, %s)", [listing_id, datetime.now().isoformat(), 1])
 
-            now = datetime.now().isoformat()
-
-            # Insert into seen_listings
-            logger.debug(f"[*] Inserting into seen_listings table...")
-            try:
-                self.client.execute(
-                    "INSERT INTO seen_listings (id, created_at, notified) VALUES (?, ?, ?)",
-                    [listing_id, now, 1]
-                )
-                logger.debug(f"[OK] seen_listings insert successful")
-            except Exception as e:
-                logger.error(f"[ERROR] seen_listings insert failed: {e}")
-                raise
-
-            # Insert into vehicle_details
             vehicle = listing_data.get("vehicle", {})
             engine = listing_data.get("engine", {})
             condition = listing_data.get("condition", {})
@@ -324,220 +147,81 @@ class DatabaseManager:
             seller = listing_data.get("seller", {})
             media = listing_data.get("media", {})
 
-            logger.debug(f"[*] Preparing vehicle_details insert...")
-            logger.debug(f"    Vehicle: {vehicle}")
-            logger.debug(f"    Engine: {engine}")
-            logger.debug(f"    Pricing: {pricing}")
-
-            logger.debug(f"[*] Inserting into vehicle_details table (48 columns)...")
-            try:
-                self.client.execute("""
-                    INSERT INTO vehicle_details (
-                        listing_id, make, make_id, model, model_id, modification, year, vin,
-                        body_type, color, interior_color, doors, seats, wheel_position, drive_type,
-                        fuel_type, fuel_type_id, displacement_liters, transmission, power_hp, cylinders,
-                        status, mileage_km, mileage_unit, customs_cleared, technical_inspection_passed,
-                        condition_description, price, currency, currency_id, negotiable,
-                        installment_available, exchange_possible, seller_type, seller_name, seller_phone,
-                        location, location_id, is_dealer, dealer_id, primary_image_url, photo_count,
-                        video_url, posted_date, last_updated, url, view_count, is_vip, is_featured
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
-                    listing_id,
-                    vehicle.get("make"), vehicle.get("make_id"),
-                    vehicle.get("model"), vehicle.get("model_id"),
-                    vehicle.get("modification"), vehicle.get("year"), vehicle.get("vin"),
-                    vehicle.get("body_type"), vehicle.get("color"), vehicle.get("interior_color"),
-                    vehicle.get("doors"), vehicle.get("seats"), vehicle.get("wheel_position"),
-                    vehicle.get("drive_type"),
-                    engine.get("fuel_type"), engine.get("fuel_type_id"),
-                    engine.get("displacement_liters"), engine.get("transmission"),
-                    engine.get("power_hp"), engine.get("cylinders"),
-                    condition.get("status"), condition.get("mileage_km"),
-                    condition.get("mileage_unit"), condition.get("customs_cleared"),
-                    condition.get("technical_inspection_passed"), condition.get("condition_description"),
-                    pricing.get("price"), pricing.get("currency"), pricing.get("currency_id"),
-                    pricing.get("negotiable"), pricing.get("installment_available"),
-                    pricing.get("exchange_possible"),
-                    seller.get("seller_type"), seller.get("seller_name"), seller.get("seller_phone"),
-                    seller.get("location"), seller.get("location_id"),
-                    seller.get("is_dealer"), seller.get("dealer_id"),
-                    media.get("primary_image_url"), media.get("photo_count"),
-                    media.get("video_url"),
-                    listing_data.get("posted_date"), listing_data.get("last_updated"),
-                    listing_data.get("url"), listing_data.get("view_count"),
-                    listing_data.get("is_vip"), listing_data.get("is_featured")
-                ])
-                logger.debug(f"[OK] vehicle_details insert successful")
-            except Exception as e:
-                logger.error(f"[ERROR] vehicle_details insert failed: {e}")
-                logger.error(f"    Error type: {type(e).__name__}")
-                raise
+            self._execute("""INSERT INTO vehicle_details (
+                listing_id, make, make_id, model, model_id, modification, year, vin,
+                body_type, color, interior_color, doors, seats, wheel_position, drive_type,
+                fuel_type, fuel_type_id, displacement_liters, transmission, power_hp, cylinders,
+                status, mileage_km, mileage_unit, customs_cleared, technical_inspection_passed,
+                condition_description, price, currency, currency_id, negotiable,
+                installment_available, exchange_possible, seller_type, seller_name, seller_phone,
+                location, location_id, is_dealer, dealer_id, primary_image_url, photo_count,
+                video_url, posted_date, last_updated, url, view_count, is_vip, is_featured
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""", [
+                listing_id,
+                vehicle.get("make"), vehicle.get("make_id"),
+                vehicle.get("model"), vehicle.get("model_id"),
+                vehicle.get("modification"), vehicle.get("year"), vehicle.get("vin"),
+                vehicle.get("body_type"), vehicle.get("color"), vehicle.get("interior_color"),
+                vehicle.get("doors"), vehicle.get("seats"), vehicle.get("wheel_position"),
+                vehicle.get("drive_type"),
+                engine.get("fuel_type"), engine.get("fuel_type_id"),
+                engine.get("displacement_liters"), engine.get("transmission"),
+                engine.get("power_hp"), engine.get("cylinders"),
+                condition.get("status"), condition.get("mileage_km"),
+                condition.get("mileage_unit"), condition.get("customs_cleared"),
+                condition.get("technical_inspection_passed"), condition.get("condition_description"),
+                pricing.get("price"), pricing.get("currency"), pricing.get("currency_id"),
+                pricing.get("negotiable"), pricing.get("installment_available"),
+                pricing.get("exchange_possible"),
+                seller.get("seller_type"), seller.get("seller_name"), seller.get("seller_phone"),
+                seller.get("location"), seller.get("location_id"),
+                seller.get("is_dealer"), seller.get("dealer_id"),
+                media.get("primary_image_url"), media.get("photo_count"),
+                media.get("video_url"),
+                listing_data.get("posted_date"), listing_data.get("last_updated"),
+                listing_data.get("url"), listing_data.get("view_count"),
+                listing_data.get("is_vip"), listing_data.get("is_featured")
+            ])
 
             logger.info(f"[OK] Stored listing: {listing_id}")
             return True
 
         except Exception as e:
-            import traceback
-            logger.error(f"[ERROR] Failed to store listing {listing_id}: {e}")
-            logger.error(f"    Full traceback: {traceback.format_exc()}")
-            return False
-
-    def get_recent_listings(self, days: int = 7, limit: int = 100) -> list:
-        """
-        Get recently added listings
-
-        Args:
-            days: Get listings from last N days
-            limit: Maximum number to return
-
-        Returns:
-            List of listing dictionaries
-        """
-
-        try:
-            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-
-            # Simple SELECT without JOIN (LibSQL doesn't support JOINs)
-            result = self.client.execute(
-                """
-                SELECT id
-                FROM seen_listings
-                WHERE created_at > ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                [cutoff_date, limit]
-            )
-
-            return result
-
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to get recent listings: {e}")
-            return []
-
-    def log_notification(self, listing_id: str, notification_type: str,
-                        success: bool, message_id: str = None) -> bool:
-        """
-        Log a sent notification
-
-        Args:
-            listing_id: Listing ID
-            notification_type: Type (new_listing, no_listings, error)
-            success: Whether notification was successful
-            message_id: Telegram message ID if successful
-
-        Returns:
-            True if logged successfully
-        """
-
-        try:
-            self.client.execute(
-                """INSERT INTO notifications_sent
-                   (listing_id, notification_type, success, telegram_message_id)
-                   VALUES (?, ?, ?, ?)""",
-                [listing_id, notification_type, 1 if success else 0, message_id]
-            )
-
-            return True
-
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to log notification: {e}")
+            logger.error(f"[ERROR] Failed to store listing: {e}")
             return False
 
     def cleanup_old_listings(self, days: int = 365) -> int:
-        """
-        Delete listings older than specified days
-
-        Args:
-            days: Delete listings older than N days
-
-        Returns:
-            Number of listings deleted
-        """
-
+        """Delete listings older than specified days"""
         try:
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
 
-            # Get count before deletion
-            count_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM seen_listings WHERE created_at < ?",
-                [cutoff_date]
-            )
-
-            count = count_result[0][0] if count_result else 0
+            count_result = self._execute("SELECT COUNT(*) as count FROM seen_listings WHERE created_at < %s", [cutoff_date])
+            count = count_result[0]['count'] if count_result else 0
 
             if count > 0:
-                self.client.execute(
-                    "DELETE FROM seen_listings WHERE created_at < ?",
-                    [cutoff_date]
-                )
-
+                self._execute("DELETE FROM seen_listings WHERE created_at < %s", [cutoff_date])
                 logger.info(f"[OK] Cleaned up {count} old listings")
 
             return count
 
         except Exception as e:
-            logger.warning(f"[WARN] Cleanup failed (non-critical): {e}")
-            # Cleanup errors are non-fatal
+            logger.warning(f"[WARN] Cleanup failed: {e}")
             return 0
 
-    def update_last_checked(self, search_id: int) -> bool:
-        """
-        Update last checked timestamp for a search
-
-        Args:
-            search_id: Search configuration ID
-
-        Returns:
-            True if successful
-        """
-
-        try:
-            self.client.execute(
-                "UPDATE search_configurations SET last_checked_at = ? WHERE id = ?",
-                [datetime.now().isoformat(), search_id]
-            )
-
-            return True
-
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to update last checked: {e}")
-            return False
-
     def get_statistics(self) -> dict:
-        """
-        Get database statistics
-
-        Returns:
-            Dictionary with stats
-        """
-
+        """Get database statistics"""
         try:
-            total_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM seen_listings"
-            )
-            total = total_result[0][0] if total_result else 0
+            total_result = self._execute("SELECT COUNT(*) as count FROM seen_listings")
+            total = total_result[0]['count'] if total_result else 0
 
-            # Calculate 24 hours ago (LibSQL doesn't support datetime() functions)
             one_day_ago = (datetime.now() - timedelta(days=1)).isoformat()
 
-            recent_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM seen_listings WHERE created_at > ?",
-                [one_day_ago]
-            )
-            recent = recent_result[0][0] if recent_result else 0
-
-            notified_result = self.client.execute(
-                "SELECT COUNT(*) as count FROM notifications_sent WHERE sent_at > ? AND success = 1",
-                [one_day_ago]
-            )
-            notified = notified_result[0][0] if notified_result else 0
+            recent_result = self._execute("SELECT COUNT(*) as count FROM seen_listings WHERE created_at > %s", [one_day_ago])
+            recent = recent_result[0]['count'] if recent_result else 0
 
             return {
                 "total_listings": total,
                 "recent_listings_24h": recent,
-                "notifications_sent_24h": notified,
                 "last_updated": datetime.now().isoformat()
             }
 
@@ -547,47 +231,9 @@ class DatabaseManager:
 
     def close(self):
         """Close database connection"""
-
         try:
-            if self.client:
-                # Turso client doesn't have explicit close, but we can log
+            if self.conn:
+                self.conn.close()
                 logger.info("[OK] Database connection closed")
         except Exception as e:
             logger.error(f"[ERROR] Failed to close connection: {e}")
-
-
-def test_database():
-    """Test database connection and operations"""
-
-    db_url = os.getenv("TURSO_DATABASE_URL")
-    auth_token = os.getenv("TURSO_AUTH_TOKEN")
-
-    if not db_url or not auth_token:
-        logger.error("[ERROR] Missing database credentials")
-        return False
-
-    try:
-        db = DatabaseManager(db_url, auth_token)
-        logger.info("[OK] Database connected")
-
-        # Initialize schema
-        if db.initialize_schema():
-            logger.info("[OK] Schema initialized")
-
-            # Get stats
-            stats = db.get_statistics()
-            logger.info(f"[OK] Stats: {stats}")
-
-            db.close()
-            return True
-
-        return False
-
-    except Exception as e:
-        logger.error(f"[ERROR] Test failed: {e}")
-        return False
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    exit(0 if test_database() else 1)

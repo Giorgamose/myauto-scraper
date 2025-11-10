@@ -30,7 +30,9 @@
       "Bash(timeout 30 python:*)",
       "Bash(gh workflow run:*)",
       "Bash(playwright install:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []

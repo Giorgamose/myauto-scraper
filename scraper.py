@@ -404,15 +404,40 @@ class MyAutoScraper:
                 logger.debug("[*] Using fallback: finding all /pr/ links")
 
                 links = soup.find_all("a", href=lambda x: x and "/pr/" in x)
-                listing_elements = [link.find_parent() for link in links if link.find_parent()]
+                # Walk up to find the actual listing card container
+                # Link structure: <a> → <div> → <div class="flex flex-col..."> (listing card)
+                listing_elements = []
+                seen_elements = set()  # Track already-added containers to avoid duplicates
 
-            # Parse each listing
+                for link in links:
+                    # Start from the link and walk up to find the listing container
+                    current = link
+                    for _ in range(5):  # Walk up max 5 levels
+                        if current:
+                            current = current.parent
+                            if current and current.name == "div":
+                                # Check if this div has multiple children (likely the container)
+                                children = [c for c in current.children if hasattr(c, 'name')]
+                                if len(children) >= 3:
+                                    # Use object id to avoid duplicate containers
+                                    elem_id = id(current)
+                                    if elem_id not in seen_elements:
+                                        listing_elements.append(current)
+                                        seen_elements.add(elem_id)
+                                    break
+
+            # Parse each listing and deduplicate by ID
+            seen_ids = set()
             for element in listing_elements:
                 try:
                     listing = MyAutoParser.parse_listing_summary(element)
 
                     if listing and listing.get("listing_id"):
-                        listings.append(listing)
+                        listing_id = listing.get("listing_id")
+                        # Avoid adding duplicate listings
+                        if listing_id not in seen_ids:
+                            listings.append(listing)
+                            seen_ids.add(listing_id)
 
                 except Exception as e:
                     logger.debug(f"[WARN] Error parsing listing element: {e}")

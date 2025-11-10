@@ -296,11 +296,42 @@ class MyAutoParser:
                 return None
 
             # Extract basic info from card
+            import re
             title = MyAutoParser.extract_text(listing_element, ".listing-title, h2, .title")
             price_text = MyAutoParser.extract_text(listing_element, ".price, .listing-price")
             location = MyAutoParser.extract_text(listing_element, ".location, .region")
             mileage_text = MyAutoParser.extract_text(listing_element, ".mileage, .km")
             image_url = MyAutoParser.extract_attribute(listing_element, "img", "src")
+
+            # If CSS selectors didn't work, try pattern matching on text content
+            if not price_text or not location or not mileage_text:
+                all_text = listing_element.get_text(separator=" ", strip=True)
+
+                # Extract price - look for 4-5 digit numbers that look like prices
+                if not price_text:
+                    # Look for patterns like 15,500 or 23000
+                    price_matches = re.findall(r'\b(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{2})?|\d{4,6})\b', all_text)
+                    if price_matches:
+                        # Take the largest number as likely price
+                        for pm in reversed(price_matches):
+                            pm_num = int(pm.replace(',', '').replace(' ', ''))
+                            if pm_num > 1000:  # Likely a price, not photo count or year
+                                price_text = pm
+                                break
+
+                # Extract location - look for Georgian city names
+                if not location:
+                    locations = ["თბილისი", "ბათუმი", "გორი", "ზღვის სანაპირო", "კახეთი", "იმერეთი", "სამცხე"]
+                    for loc in locations:
+                        if loc in all_text:
+                            location = loc
+                            break
+
+                # Extract mileage - look for km pattern
+                if not mileage_text:
+                    km_match = re.search(r'(\d{1,3}(?:[,\s]\d{3})*)\s*(?:კმ|km)', all_text)
+                    if km_match:
+                        mileage_text = km_match.group(1)
 
             price_data = MyAutoParser.normalize_price(price_text) if price_text else None
 

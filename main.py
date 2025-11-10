@@ -250,8 +250,14 @@ class CarListingMonitor:
         Flatten nested listing structure for notification formatter
         Handles both flat (from search summary) and nested (from detail fetch) structures
         """
-        # If already flat, return as is
+        # If already flat, ensure description is included
         if "fuel_type" in listing or "transmission" in listing:
+            # Make sure description is present (check both top-level and nested)
+            if "description" not in listing or not listing.get("description"):
+                # Try to extract from nested structure if available
+                nested_description = listing.get("description") or listing.get("details", {}).get("description")
+                if nested_description:
+                    listing["description"] = nested_description
             return listing
 
         # Flatten nested structure from detail page

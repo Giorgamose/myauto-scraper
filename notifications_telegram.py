@@ -292,10 +292,15 @@ class TelegramNotificationManager:
 
         # Add description if available (limit to 500 chars)
         if description:
+            # Handle dict format from scraper (e.g., {"text": "...", "features": [...]})
             if isinstance(description, dict):
-                description = description.get('text', '')
-            if description:
-                description_text = str(description)[:500]
+                description = description.get('text', '') or description.get('description', '')
+
+            # Ensure description is a string and not empty
+            description_str = str(description).strip() if description else ''
+
+            if description_str and len(description_str) > 0:
+                description_text = description_str[:500]
                 message += f"\n\n<b>Description:</b>\n{description_text}"
 
         message += f"\n\n<a href=\"{url}\">View full listing</a>"
@@ -402,11 +407,16 @@ class TelegramNotificationManager:
 
             # Add description if available (limit to 150 chars for compact format)
             if description:
+                # Handle dict format from scraper (e.g., {"text": "...", "features": [...]})
                 if isinstance(description, dict):
-                    description = description.get('text', '')
-                if description:
-                    description_short = str(description)[:150]
-                    if len(str(description)) > 150:
+                    description = description.get('text', '') or description.get('description', '')
+
+                # Ensure description is a string and not empty
+                description_str = str(description).strip() if description else ''
+
+                if description_str and len(description_str) > 0:
+                    description_short = description_str[:150]
+                    if len(description_str) > 150:
                         description_short += "..."
                     message += f"   📝 {description_short}\n"
 
@@ -456,7 +466,7 @@ def test_telegram_notifier():
     try:
         notifier = TelegramNotificationManager()
 
-        # Test with sample car data
+        # Test with sample car data (including description)
         sample_car = {
             "make": "Toyota",
             "model": "Land Cruiser",
@@ -468,10 +478,12 @@ def test_telegram_notifier():
             "fuel_type": "Diesel",
             "transmission": "Automatic",
             "drive_type": "4WD",
+            "displacement_liters": 3.0,
             "customs_cleared": True,
             "seller_name": "John Doe",
             "posted_date": "Nov 9, 2024 10:30",
-            "url": "https://www.myauto.ge/ka/pr/119084515"
+            "url": "https://www.myauto.ge/ka/pr/119084515",
+            "description": "Well-maintained Toyota Land Cruiser with excellent service history. Recently serviced, all fluids topped up. Interior and exterior in great condition."
         }
 
         logger.info("Sending test notification...")

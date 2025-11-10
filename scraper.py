@@ -74,7 +74,7 @@ class MyAutoScraper:
         }
 
         # Get settings with defaults
-        self.timeout = self.config.get("request_timeout_seconds", 15) * 1000  # Convert to ms for Playwright
+        self.timeout = self.config.get("request_timeout_seconds", 30) * 1000  # Convert to ms for Playwright (increased from 15s to 30s)
         self.delay = self.config.get("delay_between_requests_seconds", 3)
         self.max_retries = self.config.get("max_retries", 5)
         self.retry_delay = self.config.get("retry_delay_seconds", 5)

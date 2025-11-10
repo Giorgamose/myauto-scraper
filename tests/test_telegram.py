@@ -15,7 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 TELEGRAM_BOT_TOKEN = "8531271294:AAH7Od2UldndVviXAPxFXxxolqIjodW4BY4"  # Example: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 
 # Your Telegram User/Chat ID (get by sending /start to your bot)
-TELEGRAM_CHAT_ID = "6366712840"  # Example: 987654321
+TELEGRAM_CHAT_ID = "-1003275746217"  # Example: 987654321
 
 def send_telegram_message(token, chat_id, message, parse_mode="HTML"):
     """

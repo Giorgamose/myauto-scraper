@@ -9,6 +9,11 @@ import logging
 from datetime import datetime, timedelta
 import os
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env files
+load_dotenv('.env.local')
+load_dotenv('.env')
 
 logger = logging.getLogger(__name__)
 

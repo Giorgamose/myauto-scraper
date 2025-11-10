@@ -244,7 +244,6 @@ class MyAutoScraper:
                 try:
                     # Navigate to URL with Playwright (executes JavaScript)
                     # Headers are inherited from context
-                    # Use "load" instead of "networkidle" to avoid timeouts on heavy JS sites
                     logger.debug(f"[*] Navigating with Playwright...")
                     response = page.goto(
                         full_url,
@@ -264,6 +263,24 @@ class MyAutoScraper:
                         return None
 
                     status_code = response.status
+
+                    # Wait for content to load (for React/dynamic apps)
+                    # Try to wait for listing elements to appear
+                    logger.debug("[*] Waiting for content to render...")
+                    try:
+                        # Wait for either search results or "no results" message
+                        page.wait_for_selector(
+                            'a[href*="/pr/"], [class*="no-result"], [class*="empty"]',
+                            timeout=5000
+                        )
+                        logger.debug("[OK] Content loaded")
+                    except Exception as e:
+                        logger.debug(f"[*] Content wait timed out or failed (may be OK): {e}")
+                        # Continue anyway - page might still have content
+
+                    # Add a small delay to ensure content is fully rendered
+                    time.sleep(2)
+
                     html_content = page.content()
 
                     # Log response details

@@ -514,47 +514,98 @@ class MyAutoParser:
                 'გაცვლა': 'exchange_possible',
             }
 
-            # Find all divs that contain Georgian labels with colons
-            divs = soup.find_all('div')
-
-            for div in divs:
-                text = div.get_text(strip=True)
-
-                # Only process if it contains a colon
-                if ':' not in text:
-                    continue
-
-                # Split on first colon
-                parts = text.split(':', 1)
-                if len(parts) != 2:
-                    continue
-
-                label = parts[0].strip()
-                value = parts[1].strip()
-
-                # Skip if empty
-                if not label or not value:
-                    continue
-
-                # Check if this is a known Georgian label
-                if label not in label_mapping:
-                    continue
-
-                field_name = label_mapping[label]
-
-                # Don't overwrite if already found
+            # STRATEGY 1: For each Georgian label, find it in the page and extract the value
+            for label_text, field_name in label_mapping.items():
+                # Skip if already extracted
                 if field_name in data:
                     continue
 
-                # For some fields, extract just the number
-                if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
-                    match = re.search(r'\d+\.?\d*', value)
-                    if match:
-                        value = match.group(0)
+                # Find all text nodes containing this Georgian label
+                found = False
+                for elem in soup.find_all(string=lambda x: x and label_text in str(x)):
+                    try:
+                        text = str(elem).strip()
 
-                # Store as string
-                data[field_name] = value
-                logger.debug(f"[OK] Extracted {field_name}: {value}")
+                        # If the text contains both label and value separated by colon
+                        if ':' in text:
+                            parts = text.split(':', 1)
+                            if len(parts) == 2:
+                                value = parts[1].strip()
+                                # Verify label is actually this label
+                                if label_text in parts[0]:
+                                    # Keep only reasonable-length values
+                                    if value and len(value) < 100:
+                                        # Extract number if needed
+                                        if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
+                                            match = re.search(r'\d+\.?\d*', value)
+                                            if match:
+                                                data[field_name] = match.group(0)
+                                        else:
+                                            data[field_name] = value
+
+                                        logger.debug(f"[OK] Extracted {field_name}: {value}")
+                                        found = True
+                                        break
+                        else:
+                            # Label without immediate value - try to get from next sibling
+                            parent = elem.parent
+                            if parent:
+                                # Try next sibling
+                                next_elem = parent.next_sibling
+                                while next_elem:
+                                    if hasattr(next_elem, 'get_text'):
+                                        next_text = next_elem.get_text(strip=True)
+                                    else:
+                                        next_text = str(next_elem).strip()
+
+                                    if next_text and len(next_text) < 100 and not next_text.startswith(('<', '>')):
+                                        # Extract number if needed
+                                        if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
+                                            match = re.search(r'\d+\.?\d*', next_text)
+                                            if match:
+                                                data[field_name] = match.group(0)
+                                                logger.debug(f"[OK] Extracted {field_name}: {match.group(0)}")
+                                        else:
+                                            data[field_name] = next_text
+                                            logger.debug(f"[OK] Extracted {field_name}: {next_text}")
+                                        found = True
+                                        break
+
+                                    # Move to next sibling
+                                    next_elem = next_elem.next_sibling if hasattr(next_elem, 'next_sibling') else None
+
+                            if found:
+                                break
+
+                    except Exception as e:
+                        logger.debug(f"Error processing element for {field_name}: {e}")
+                        continue
+
+            # STRATEGY 2: Direct fuel type extraction for 'საწვავის ტიპი' (fuel_type)
+            # Sometimes the Georgian labels structure is complex, so search for common fuel types
+            if 'fuel_type' not in data or not data['fuel_type']:
+                fuel_types_map = {
+                    'დიზელი': 'Diesel',
+                    'ბენზინი': 'Petrol',
+                    'გაზი': 'Gas',
+                    'ელექტრო': 'Electric',
+                    'ჰიბრიდი': 'Hybrid',
+                    'LPG': 'LPG',
+                    'CNG': 'CNG',
+                }
+
+                for georgian_fuel, english_fuel in fuel_types_map.items():
+                    if georgian_fuel in soup.get_text():
+                        # Make sure it's in context of fuel label
+                        for elem in soup.find_all(string=lambda x: x and georgian_fuel in str(x)):
+                            parent_text = elem.parent.get_text(strip=True) if elem.parent else ""
+                            # Check if this is near the fuel_type label
+                            if 'საწვავის' in parent_text or parent_text.count(georgian_fuel) == 1:
+                                data['fuel_type'] = english_fuel
+                                logger.debug(f"[OK] Extracted fuel_type: {english_fuel}")
+                                break
+                    if 'fuel_type' in data:
+                        break
 
             return data if data else None
 

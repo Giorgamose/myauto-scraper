@@ -272,7 +272,7 @@ class TelegramNotificationManager:
             try:
                 usd_val = int(str(price_usd).replace(',', '').replace(' ', ''))
                 gel_val = int(str(price_gel).replace(',', '').replace(' ', ''))
-                price_display = f"💵 ${usd_val:,} USD | 💎 ₾{gel_val:,} GEL"
+                price_display = f"${usd_val:,} | ₾{gel_val:,}"
             except (ValueError, AttributeError, TypeError):
                 pass  # Fall back to original price_display
 
@@ -336,7 +336,7 @@ class TelegramNotificationManager:
                 try:
                     usd_val = int(str(price_usd).replace(',', '').replace(' ', ''))
                     gel_val = int(str(price_gel).replace(',', '').replace(' ', ''))
-                    price_str = f"💵 ${usd_val:,} | 💎 ₾{gel_val:,}"
+                    price_str = f"${usd_val:,} | ₾{gel_val:,}"
                 except (ValueError, AttributeError, TypeError):
                     # Fall back to single price
                     if not price:

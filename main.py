@@ -129,11 +129,57 @@ class CarListingMonitor:
                 logger.warning(f"[WARN] Notifications not available: {e}")
 
             logger.info("[OK] All services initialized successfully")
+
+            # Initialize search configurations in database
+            self._initialize_search_configs()
+
             return True
 
         except Exception as e:
             logger.error(f"[ERROR] Initialization failed: {e}")
             return False
+
+    def _initialize_search_configs(self):
+        """
+        Populate search_configurations table from config.json
+        """
+        try:
+            logger.info("[*] Initializing search configurations in database...")
+
+            search_configs = self.config.get("search_configurations", [])
+
+            for config in search_configs:
+                try:
+                    # Prepare data for database
+                    search_data = {
+                        "name": config.get("name"),
+                        "search_url": config.get("base_url"),
+                        "vehicle_make": config.get("parameters", {}).get("mansNModels"),
+                        "is_active": 1 if config.get("enabled", False) else 0,
+                        "created_at": datetime.now().isoformat(),
+                    }
+
+                    # Insert or update search configuration
+                    response = self.database._make_request(
+                        'POST',
+                        f"{self.database.base_url}/search_configurations",
+                        headers=self.database.headers,
+                        json=search_data,
+                        timeout=10
+                    )
+
+                    if response.status_code in [200, 201]:
+                        logger.debug(f"[OK] Stored search config: {config.get('name')}")
+                    else:
+                        logger.warning(f"[WARN] Failed to store search config: {response.status_code}")
+
+                except Exception as e:
+                    logger.warning(f"[WARN] Error storing search config {config.get('name')}: {e}")
+
+            logger.info("[OK] Search configurations initialized")
+
+        except Exception as e:
+            logger.warning(f"[WARN] Error initializing search configurations: {e}")
 
     def process_search(self, search_config: Dict) -> Tuple[List[Dict], int]:
         """
@@ -175,10 +221,24 @@ class CarListingMonitor:
             if new_listings:
                 logger.info(f"[OK] Detected {len(new_listings)} new listings")
 
-                # Store new listings in database
+                # Fetch detailed information for each new listing and store
                 for listing in new_listings:
                     try:
-                        self.database.store_listing(listing)
+                        listing_id = listing.get("listing_id")
+                        logger.debug(f"[*] Fetching details for listing {listing_id}...")
+
+                        # Fetch complete listing details
+                        listing_details = self.scraper.fetch_listing_details(listing_id)
+
+                        if listing_details:
+                            # Store the complete listing data
+                            self.database.store_listing(listing_details)
+                            logger.info(f"[OK] Stored listing {listing_id}")
+                        else:
+                            # Store what we have even if details fetch failed
+                            logger.warning(f"[WARN] Could not fetch details for {listing_id}, storing summary only")
+                            self.database.store_listing(listing)
+
                     except Exception as e:
                         logger.error(f"[ERROR] Failed to store listing: {e}")
                         self.stats["errors_encountered"] += 1

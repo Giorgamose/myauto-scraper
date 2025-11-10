@@ -34,7 +34,9 @@
       "Bash(timeout 10 python:*)",
       "Bash(pip show:*)",
       "Bash(LOG_LEVEL=DEBUG timeout 120 python:*)",
-      "Bash(iconv:*)"
+      "Bash(iconv:*)",
+      "Bash(თბილისის ცენტრის მანქანა)",
+      "Bash(ყველაზე მაღალი კომპლექტაცია...\"\n\nInstead of feature lists or UI elements.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

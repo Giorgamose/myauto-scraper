@@ -621,13 +621,13 @@ class MyAutoScraper:
                     usd_prices = [p for p in all_prices.values() if p['currency'] == 'USD']
                     gel_prices = [p for p in all_prices.values() if p['currency'] == 'GEL']
 
-                    # If we have both, validate with exchange rate logic (1 USD = 2.72 GEL)
+                    # If we have both, validate with exchange rate logic
                     if usd_prices and gel_prices and not listing_data["pricing"].get("price"):
                         usd_amount = min(int(p['value'].replace(',', '').replace(' ', '')) for p in usd_prices)
                         gel_amount = max(int(p['value'].replace(',', '').replace(' ', '')) for p in gel_prices)
 
-                        # Validate exchange rate (GEL should be ~2.5-3x USD)
-                        if 2.0 < gel_amount / usd_amount < 3.5:
+                        # Validate exchange rate (GEL typically ~2.6-3.0x USD, allow 2.4-3.1 range)
+                        if 2.4 < gel_amount / usd_amount < 3.1:
                             listing_data["pricing"]["price_usd"] = str(usd_amount)
                             listing_data["pricing"]["price_gel"] = str(gel_amount)
                             listing_data["pricing"]["price"] = str(usd_amount)  # Primary price is USD

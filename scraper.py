@@ -107,6 +107,7 @@ class MyAutoScraper:
 
             all_listings = []
             seen_ids = set()
+            seen_urls = set()  # Fallback deduplication using URLs
             pages_fetched = 0
             pages_with_no_new_listings = 0
 
@@ -143,12 +144,34 @@ class MyAutoScraper:
 
                     # Add new listings (avoiding duplicates)
                     new_count = 0
+                    none_id_count = 0
                     for listing in page_listings:
                         listing_id = listing.get("listing_id")
-                        if listing_id and listing_id not in seen_ids:
+                        listing_url = listing.get("url")
+
+                        # Debug: track when listing_id is None
+                        if not listing_id:
+                            none_id_count += 1
+
+                        # Try to deduplicate using listing_id first, fall back to URL
+                        is_duplicate = False
+                        if listing_id:
+                            is_duplicate = listing_id in seen_ids
+                            if not is_duplicate:
+                                seen_ids.add(listing_id)
+                        elif listing_url:
+                            # Fallback: use URL for deduplication if ID extraction failed
+                            is_duplicate = listing_url in seen_urls
+                            if not is_duplicate:
+                                seen_urls.add(listing_url)
+
+                        if not is_duplicate:
                             all_listings.append(listing)
-                            seen_ids.add(listing_id)
                             new_count += 1
+
+                    # Log warning if many listings have None listing_id
+                    if none_id_count > len(page_listings) * 0.5:
+                        logger.warning(f"[WARN] Page {page_num}: {none_id_count}/{len(page_listings)} listings have no listing_id - ID extraction may be failing")
 
                     logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
 

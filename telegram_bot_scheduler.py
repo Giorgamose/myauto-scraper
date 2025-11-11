@@ -246,6 +246,41 @@ class TelegramBotScheduler(threading.Thread):
             logger.error(f"[ERROR] Failed to fetch listings from {search_url}: {e}")
             return []
 
+    def _enrich_listings_with_details(self, listings: List[Dict]) -> List[Dict]:
+        """
+        Enrich basic listing summaries with detailed information
+        Fetches full details for each listing to include fuel type, transmission, etc.
+
+        Args:
+            listings: List of basic listing summaries
+
+        Returns:
+            List of enriched listing dictionaries
+        """
+        enriched = []
+
+        for listing in listings:
+            listing_id = listing.get("listing_id")
+
+            if listing_id:
+                try:
+                    # Fetch detailed information for this listing
+                    detailed = self.scraper.fetch_listing_details(listing_id)
+                    if detailed:
+                        # Merge detailed info with summary
+                        listing.update(detailed)
+                        enriched.append(listing)
+                    else:
+                        # Use summary if details fetch fails
+                        enriched.append(listing)
+                except Exception as e:
+                    logger.debug(f"[WARN] Could not fetch details for listing {listing_id}: {e}")
+                    enriched.append(listing)
+            else:
+                enriched.append(listing)
+
+        return enriched
+
     def _send_notifications_to_user(self, telegram_user_id: str, chat_id: int, listings: List[Dict]):
         """
         Send notifications to a Telegram user for new listings
@@ -260,19 +295,22 @@ class TelegramBotScheduler(threading.Thread):
             return
 
         try:
+            # Enrich listings with detailed information
+            enriched_listings = self._enrich_listings_with_details(listings)
+
             # Check if channel notification is enabled
             notification_channel = os.getenv("TELEGRAM_NOTIFICATION_CHANNEL_ID", "").strip()
 
             if notification_channel:
                 # Send to channel instead of individual user
-                return self._send_notifications_to_channel(notification_channel, listings)
+                return self._send_notifications_to_channel(notification_channel, enriched_listings)
 
             # Send to individual user
-            logger.info(f"[*] Sending {len(listings)} notification(s) to user {telegram_user_id} (chat {chat_id})")
+            logger.info(f"[*] Sending {len(enriched_listings)} notification(s) to user {telegram_user_id} (chat {chat_id})")
 
             # Handle single listing
-            if len(listings) == 1:
-                message = self._format_single_listing_notification(listings[0])
+            if len(enriched_listings) == 1:
+                message = self._format_single_listing_notification(enriched_listings[0])
                 success = self.bot_backend.send_message(chat_id, message)
 
                 if success:
@@ -281,7 +319,7 @@ class TelegramBotScheduler(threading.Thread):
                     logger.warning(f"[WARN] Failed to send notification to chat {chat_id}")
             else:
                 # Handle multiple listings with batching (same as notifications_telegram.py)
-                batches = TelegramNotificationManager._split_listings_into_batches(listings, max_listings_per_batch=10)
+                batches = TelegramNotificationManager._split_listings_into_batches(enriched_listings, max_listings_per_batch=10)
 
                 for batch_num, batch in enumerate(batches, 1):
                     # Format with batch info if multi-batch
@@ -290,7 +328,7 @@ class TelegramBotScheduler(threading.Thread):
                             batch,
                             batch_num=batch_num,
                             total_batches=len(batches),
-                            total_listings=len(listings)
+                            total_listings=len(enriched_listings)
                         )
                     else:
                         message = self._format_multiple_listings_notification(batch)

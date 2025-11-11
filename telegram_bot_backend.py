@@ -695,11 +695,32 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 if new_listings:
                     logger.info(f"[+] Found {len(new_listings)} new listings for subscription {sub_id}")
 
-                    # Format and send results
-                    if len(new_listings) == 1:
-                        message = self._format_single_listing_for_run(new_listings[0], sub_index + 1)
+                    # Enrich listings with detailed information
+                    enriched_listings = []
+                    for listing in new_listings:
+                        listing_id = listing.get("listing_id")
+                        if listing_id:
+                            try:
+                                # Fetch detailed information for this listing
+                                detailed = scraper.fetch_listing_details(listing_id)
+                                if detailed:
+                                    # Merge detailed info with summary
+                                    listing.update(detailed)
+                                    enriched_listings.append(listing)
+                                else:
+                                    # Use summary if details fetch fails
+                                    enriched_listings.append(listing)
+                            except Exception as e:
+                                logger.debug(f"[WARN] Could not fetch details for listing {listing_id}: {e}")
+                                enriched_listings.append(listing)
+                        else:
+                            enriched_listings.append(listing)
+
+                    # Format and send results with enriched data
+                    if len(enriched_listings) == 1:
+                        message = self._format_single_listing_for_run(enriched_listings[0], sub_index + 1)
                     else:
-                        message = self._format_multiple_listings_for_run(new_listings, sub_index + 1)
+                        message = self._format_multiple_listings_for_run(enriched_listings, sub_index + 1)
 
                     self.send_message(chat_id, message)
 

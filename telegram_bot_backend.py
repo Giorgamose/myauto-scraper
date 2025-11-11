@@ -697,10 +697,21 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                     message = f"<b>✅ Check Complete</b>\n\nNo listings found for search #{sub_index + 1}.\n\nThe search may be empty or MyAuto.ge may be rate limiting. Please try again in a moment.\n\n<code>{search_url[:60]}...</code>"
                     return self.send_message(chat_id, message)
 
+                # Limit /run results to first 100 to prevent overwhelming the bot
+                # Large searches can have 100K+ listings which would take hours to send
+                max_run_results = 100
+                if len(listings) > max_run_results:
+                    logger.info(f"[*] Limiting /run results from {len(listings)} to {max_run_results} listings")
+                    listings_to_check = listings[:max_run_results]
+                    listing_count_msg = f"Showing first {max_run_results} of {len(listings)} listings"
+                else:
+                    listings_to_check = listings
+                    listing_count_msg = None
+
                 # Filter for new listings (not seen before)
                 new_listings = []
 
-                for listing in listings:
+                for listing in listings_to_check:
                     listing_id = listing.get("listing_id")
 
                     if listing_id and not self.database.has_user_seen_listing(user_id, listing_id):
@@ -711,6 +722,12 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 
                 if new_listings:
                     logger.info(f"[+] Found {len(new_listings)} new listings for subscription {sub_id}")
+
+                    # Send limit notice if applicable
+                    if listing_count_msg:
+                        limit_msg = f"⚠️ <b>Large Search Result</b>\n\n{listing_count_msg}\n\nScheduler notifications will show complete updates."
+                        self.send_message(chat_id, limit_msg)
+                        time.sleep(1)  # Delay before sending results
 
                     # Format and send results
                     # Note: We don't fetch detailed information here because /run executes in the message handler thread

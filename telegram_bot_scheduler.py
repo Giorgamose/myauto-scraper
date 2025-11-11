@@ -113,12 +113,13 @@ class TelegramBotScheduler(threading.Thread):
 
             logger.info(f"[*] Checking {len(subscriptions)} subscription(s)")
 
-            # Group subscriptions by chat_id for efficient processing
-            chats_to_notify = {}  # {chat_id: [new_listings]}
+            # Group subscriptions by telegram_user_id for efficient processing
+            # {telegram_user_id: {'chat_id': int, 'listings': [...]}}
+            users_to_notify = {}
 
             for subscription in subscriptions:
                 try:
-                    self._check_subscription(subscription, chats_to_notify)
+                    self._check_subscription(subscription, users_to_notify)
                     self.stats["subscriptions_checked"] += 1
 
                 except Exception as e:
@@ -126,14 +127,16 @@ class TelegramBotScheduler(threading.Thread):
                     self.stats["errors"] += 1
                     continue
 
-            # Send notifications for all new listings
-            for chat_id, listings in chats_to_notify.items():
+            # Send notifications for all new listings (per user)
+            for telegram_user_id, user_data in users_to_notify.items():
                 try:
-                    self._send_notifications_to_chat(chat_id, listings)
+                    listings = user_data.get('listings', [])
+                    chat_id = user_data.get('chat_id')
+                    self._send_notifications_to_user(telegram_user_id, chat_id, listings)
                     self.stats["notifications_sent"] += len(listings)
 
                 except Exception as e:
-                    logger.error(f"[ERROR] Error sending notifications to chat {chat_id}: {e}")
+                    logger.error(f"[ERROR] Error sending notifications to user {telegram_user_id}: {e}")
                     self.stats["errors"] += 1
 
             # Cleanup
@@ -154,16 +157,18 @@ class TelegramBotScheduler(threading.Thread):
             logger.error(f"[ERROR] Error in check cycle: {e}")
             self.stats["errors"] += 1
 
-    def _check_subscription(self, subscription: Dict, chats_to_notify: Dict):
+    def _check_subscription(self, subscription: Dict, users_to_notify: Dict):
         """
         Check a single subscription for new listings
 
         Args:
-            subscription: Subscription dict with id, chat_id, search_url
-            chats_to_notify: Dictionary to accumulate listings to send
+            subscription: Subscription dict with id, telegram_user_id, chat_id, search_url
+            users_to_notify: Dictionary to accumulate listings per user
+                           {telegram_user_id: {'chat_id': int, 'listings': [...]}}
         """
         subscription_id = subscription.get("id")
-        chat_id = subscription.get("chat_id")
+        telegram_user_id = subscription.get("telegram_user_id")
+        chat_id = subscription.get("chat_id")  # Keep for notifications
         search_url = subscription.get("search_url")
 
         logger.debug(f"[*] Checking subscription {subscription_id}: {search_url[:60]}")
@@ -175,7 +180,7 @@ class TelegramBotScheduler(threading.Thread):
             if not listings:
                 logger.debug(f"[*] No listings found for subscription {subscription_id}")
                 # Still update last_checked even if no listings found
-                self.database.update_last_checked(subscription_id)
+                self.database.update_subscription_check_time(subscription_id)
                 return
 
             logger.info(f"[+] Found {len(listings)} listings for subscription {subscription_id}")
@@ -186,23 +191,26 @@ class TelegramBotScheduler(threading.Thread):
             for listing in listings:
                 listing_id = listing.get("listing_id")
 
-                if listing_id and not self.database.has_user_seen_listing(chat_id, listing_id):
+                if listing_id and not self.database.has_user_seen_listing(telegram_user_id, listing_id):
                     new_listings.append(listing)
-                    # Mark as seen
-                    self.database.mark_listing_seen(chat_id, listing_id)
+                    # Mark as seen (multi-user isolation)
+                    self.database.record_user_seen_listing(telegram_user_id, listing_id)
                     logger.info(f"[+] New listing found: {listing_id}")
 
             if new_listings:
                 self.stats["new_listings_found"] += len(new_listings)
 
-                # Accumulate listings for this chat
-                if chat_id not in chats_to_notify:
-                    chats_to_notify[chat_id] = []
+                # Accumulate listings for this telegram user
+                if telegram_user_id not in users_to_notify:
+                    users_to_notify[telegram_user_id] = {
+                        'chat_id': chat_id,
+                        'listings': []
+                    }
 
-                chats_to_notify[chat_id].extend(new_listings)
+                users_to_notify[telegram_user_id]['listings'].extend(new_listings)
 
             # Update last_checked timestamp
-            self.database.update_last_checked(subscription_id)
+            self.database.update_subscription_check_time(subscription_id)
 
         except Exception as e:
             logger.error(f"[ERROR] Error checking subscription {subscription_id}: {e}")
@@ -237,12 +245,13 @@ class TelegramBotScheduler(threading.Thread):
             logger.error(f"[ERROR] Failed to fetch listings from {search_url}: {e}")
             return []
 
-    def _send_notifications_to_chat(self, chat_id: int, listings: List[Dict]):
+    def _send_notifications_to_user(self, telegram_user_id: str, chat_id: int, listings: List[Dict]):
         """
-        Send notifications to a user for new listings
+        Send notifications to a Telegram user for new listings
 
         Args:
-            chat_id: Telegram chat ID
+            telegram_user_id: User UUID from telegram_users table
+            chat_id: Telegram chat ID for sending messages
             listings: List of new listings to notify about
         """
         if not listings or not self.bot_backend:
@@ -253,11 +262,11 @@ class TelegramBotScheduler(threading.Thread):
             notification_channel = os.getenv("TELEGRAM_NOTIFICATION_CHANNEL_ID", "").strip()
 
             if notification_channel:
-                # Send to channel instead of individual chat
+                # Send to channel instead of individual user
                 return self._send_notifications_to_channel(notification_channel, listings)
 
-            # Otherwise send to individual chat
-            logger.info(f"[*] Sending {len(listings)} notification(s) to chat {chat_id}")
+            # Send to individual user
+            logger.info(f"[*] Sending {len(listings)} notification(s) to user {telegram_user_id} (chat {chat_id})")
 
             # Format message with listings
             if len(listings) == 1:

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Import bot modules
 try:
-    from telegram_bot_database_supabase import TelegramBotDatabaseSupabase
+    from telegram_bot_database_multiuser import TelegramBotDatabaseMultiUser
     from telegram_bot_backend import TelegramBotBackend
     from telegram_bot_scheduler import TelegramBotScheduler
 except ImportError as e:
@@ -68,17 +68,17 @@ class TelegramBotApplication:
         try:
             logger.info("[*] Initializing Telegram Bot Application...")
 
-            # 1. Initialize database (uses existing Supabase instance)
-            logger.info("[*] Initializing Supabase database...")
+            # 1. Initialize database (uses existing Supabase instance - Multi-User)
+            logger.info("[*] Initializing Supabase database (Multi-User System)...")
             try:
-                self.database = TelegramBotDatabaseSupabase()
-                logger.info("[OK] Supabase database initialized")
+                self.database = TelegramBotDatabaseMultiUser()
+                logger.info("[OK] Supabase database initialized (Multi-User)")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to initialize Supabase database: {e}")
                 logger.error("[ERROR] Make sure:")
                 logger.error("  1. SUPABASE_URL is set in .env.local")
                 logger.error("  2. SUPABASE_API_KEY is set in .env.local")
-                logger.error("  3. Database tables created (user_subscriptions, user_seen_listings, bot_events)")
+                logger.error("  3. Database tables created (telegram_users, telegram_user_subscriptions, telegram_user_seen_listings, telegram_bot_events)")
                 return False
 
             # 2. Load config for scraper (needed before initializing scraper)

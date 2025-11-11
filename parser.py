@@ -549,10 +549,11 @@ class MyAutoParser:
 
                                     # Extract number if needed
                                     if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
-                                        match = re.search(r'\d+\.?\d*', value_clean)
-                                        if match:
-                                            data[field_name] = match.group(0)
-                                            logger.debug(f"[OK] Extracted {field_name}: {match.group(0)}")
+                                        # Use extract_number to properly handle comma-separated numbers like "59,500"
+                                        extracted_num = MyAutoParser.extract_number(value_clean)
+                                        if extracted_num is not None:
+                                            data[field_name] = extracted_num
+                                            logger.debug(f"[OK] Extracted {field_name}: {extracted_num}")
                                     else:
                                         data[field_name] = value_clean
                                         logger.debug(f"[OK] Extracted {field_name}: {value_clean}")
@@ -582,10 +583,11 @@ class MyAutoParser:
 
                                         # Extract number if needed
                                         if field_name in ['mileage_km', 'displacement_liters', 'cylinders', 'doors', 'seats', 'price', 'year']:
-                                            match = re.search(r'\d+\.?\d*', next_text)
-                                            if match:
-                                                data[field_name] = match.group(0)
-                                                logger.debug(f"[OK] Extracted {field_name}: {match.group(0)}")
+                                            # Use extract_number to properly handle comma-separated numbers like "59,500"
+                                            extracted_num = MyAutoParser.extract_number(next_text)
+                                            if extracted_num is not None:
+                                                data[field_name] = extracted_num
+                                                logger.debug(f"[OK] Extracted {field_name}: {extracted_num}")
                                         else:
                                             data[field_name] = next_text
                                             logger.debug(f"[OK] Extracted {field_name}: {next_text}")

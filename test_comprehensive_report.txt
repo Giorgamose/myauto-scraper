@@ -1,0 +1,122 @@
+COMPREHENSIVE TELEGRAM BOT TEST REPORT
+======================================================================
+Timestamp: 2025-11-11 13:45:28.249017
+Duration: 121.14s
+
+Summary:
+  Total:  50
+  Passed: 40
+  Failed: 10
+  Success: 80.0%
+
+Test Groups:
+  Basic Operations:      3 tests
+  Listing Edge Cases:    5 tests
+  Deduplication:         3 tests
+  Price Formatting:      1 test
+  Message Size:          1 test
+  Subscription Mgmt:     2 tests
+  Error Scenarios:       2 tests
+
+Details:
+----------------------------------------------------------------------
+ 1. [PASS] User creation
+     User ID: 7cb909fc...
+ 2. [FAIL] Add small search subscription
+     ID: Subscrip...
+ 3. [FAIL] Add medium search subscription
+     ID: Subscrip...
+ 4. [FAIL] Add large search subscription
+     ID: Subscrip...
+ 5. [PASS] Single listing - Format
+     Result count: 1
+ 6. [PASS] Single listing - Message size
+     Size: 463 chars (limit: 4096)
+ 7. [PASS] Batch boundary - Have 10 listings
+     Count: 10
+ 8. [PASS] Batch boundary - Should be 1 batch
+     Batches: 1
+ 9. [PASS] Batch boundary - Message fits in 4096
+     Size: 2789 chars
+10. [PASS] Batch split - Have 11 listings
+     Count: 11
+11. [PASS] Batch split - Should be 2 batches
+     Batches: 2
+12. [PASS] Batch split - First batch size
+     Size: 10
+13. [PASS] Batch split - Second batch size
+     Size: 1
+14. [PASS] Batch split - Batch 1 message size
+     Size: 2811 chars
+15. [PASS] Batch split - Batch 2 message size
+     Size: 333 chars
+16. [PASS] 20 listings - Have 20 listings
+     Count: 20
+17. [PASS] 20 listings - Should be 2 batches
+     Batches: 2
+18. [PASS] 20 listings - First batch has 10
+     Size: 10
+19. [PASS] 20 listings - Second batch has 10
+     Size: 10
+20. [PASS] 30 listings - Have 30 listings
+     Count: 30
+21. [PASS] 30 listings - Should be 3 batches
+     Batches: 3
+22. [PASS] 30 listings - Batch 1 size
+     Size: 10
+23. [PASS] 30 listings - Batch 1 has header
+     Correct batch header
+24. [PASS] 30 listings - Batch 2 size
+     Size: 10
+25. [PASS] 30 listings - Batch 2 has header
+     Correct batch header
+26. [PASS] 30 listings - Batch 3 size
+     Size: 10
+27. [PASS] 30 listings - Batch 3 has header
+     Correct batch header
+28. [PASS] Deduplication - Mark listings as seen
+     Marked 3 listings
+29. [PASS] Deduplication - New listings identified
+     New count: 27, Previously marked: 3
+30. [PASS] Mixed - Seen vs new distinction
+     Seen: 3, New: 27
+31. [PASS] Price format - Small price (1000)
+     Expected: ₾1,000, Found: True
+32. [PASS] Price format - 5-digit price (10000)
+     Expected: ₾10,000, Found: True
+33. [PASS] Price format - 6-digit price (100000)
+     Expected: ₾100,000, Found: True
+34. [PASS] Price format - 7-digit price (1234567)
+     Expected: ₾1,234,567, Found: True
+35. [PASS] Price format - Real example (Toyota) (59500)
+     Expected: ₾59,500, Found: True
+36. [PASS] Message size - Batch 1
+     Size: 2811/4096 chars (68.6%)
+37. [PASS] Message size - Batch 2
+     Size: 2748/4096 chars (67.1%)
+38. [PASS] Message size - Batch 3
+     Size: 2681/4096 chars (65.5%)
+39. [PASS] List subscriptions - Retrieve
+     Count: 5
+40. [FAIL] List subscriptions - Sub 1 fields
+     Name: None
+41. [FAIL] List subscriptions - Sub 2 fields
+     Name: None
+42. [FAIL] List subscriptions - Sub 3 fields
+     Name: None
+43. [FAIL] List subscriptions - Sub 4 fields
+     Name: None
+44. [FAIL] List subscriptions - Sub 5 fields
+     Name: None
+45. [FAIL] Remove subscription
+     No subscription to remove
+46. [PASS] Error handling - Invalid user ID
+     Handled gracefully
+47. [PASS] Error handling - Empty URL
+     Rejected empty URL
+48. [PASS] Error handling - None URL
+     Rejected None URL
+49. [PASS] Error handling - Very long URL
+     Handled long URL
+50. [FAIL] Special characters - Add with special chars
+     Name: Search #1 (BMW 3-Series) - €Test

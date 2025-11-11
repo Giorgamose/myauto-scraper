@@ -1,0 +1,31 @@
+TELEGRAM BOT TEST REPORT
+======================================================================
+Timestamp: 2025-11-11 12:48:27.212761
+Duration: 13.85s
+
+Summary:
+  Total:  9
+  Passed: 2
+  Failed: 7
+  Success: 22.2%
+
+Details:
+----------------------------------------------------------------------
+1. [FAIL] User creation/retrieval
+   Failed to create user
+2. [FAIL] /set command
+   User ID not available
+3. [FAIL] /list command
+   User ID not available
+4. [FAIL] /reset command
+   No subscriptions to reset
+5. [FAIL] /clear command
+   Not enough subscriptions to test
+6. [FAIL] /run command
+   No subscriptions to test
+7. [FAIL] Data persistence
+   User ID not available
+8. [PASS] Handle invalid user ID gracefully
+   Result type: <class 'list'>
+9. [PASS] Handle empty URL
+   Empty URL rejected or warning issued

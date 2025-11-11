@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(📍 Location\"\n\nAll notifications now cleanly display GEL prices with proper symbol.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Deploy Telegram multi-user system with individual search criteria management\n\nMAJOR CHANGES:\n- Migrated from single-system to multi-user architecture\n- Each user has individual search subscriptions and deduplication\n- Users can create custom search criteria (replaces hardcoded config.json)\n- Complete user data isolation - users can only access their own data\n\nDATABASE:\n- New tables: telegram_users, telegram_user_search_criteria, telegram_user_api_tokens\n- Updated: telegram_user_subscriptions, telegram_user_seen_listings, telegram_bot_events\n- Added: 4 analytics views, 3 cleanup functions, 30+ optimized indexes\n\nCODE CHANGES:\n- Updated telegram_bot_main.py: TelegramBotDatabaseSupabase → TelegramBotDatabaseMultiUser\n- Updated telegram_bot_scheduler.py: per-user subscription checking and notifications\n- New module: telegram_bot_database_multiuser.py (600 LOC)\n- New module: search_criteria_management.py (550 LOC)\n- New module: user_management.py (500 LOC)\n- New: test_multiuser_system.py (20 comprehensive tests)\n- New: sql_migration_multi_user.sql (comprehensive database migration)\n\nBENEFITS:\n✅ Multi-user system with complete isolation\n✅ Per-user search criteria management  \n✅ Per-user subscription management\n✅ Per-user deduplication (no cross-user notifications)\n✅ Event logging and analytics\n✅ Automatic cleanup functions\n✅ Backward compatible with existing data\n✅ Production-ready with full documentation\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Read(//c/Users/gmaevski/Documents/MyAuto Listing Scrapper/**)",
+      "Bash(git commit:*)",
+      "Bash(python test_multiuser_system.py:*)",
+      "Bash(git add:*)",
+      "Read(//c/Users/gmaevski/Documents/**)",
+      "Bash(python test_telegram_bot.py:*)",
+      "Bash(timeout 300 python:*)",
+      "Bash(python:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

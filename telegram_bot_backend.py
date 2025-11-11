@@ -231,7 +231,8 @@ class TelegramBotBackend:
             elif command == "/list":
                 return self._handle_list(chat_id)
             elif command == "/clear":
-                return self._handle_clear(chat_id)
+                argument = parts[1] if len(parts) > 1 else None
+                return self._handle_clear(chat_id, argument)
             elif command == "/status":
                 return self._handle_status(chat_id)
             elif command == "/run":
@@ -284,8 +285,10 @@ This bot helps you monitor MyAuto.ge car listings. Set search URLs and get notif
   <i>Example: /reset 1 (resets memory for first search)</i>
   The bot will show all listings as "new" on next check
 
-/clear
-  Remove all your saved searches
+/clear &lt;all | number&gt;
+  Remove saved search(es)
+  <i>Example: /clear all (removes all searches)</i>
+  <i>Example: /clear 1 (removes first search)</i>
 
 /status
   Show bot statistics
@@ -300,6 +303,7 @@ This bot helps you monitor MyAuto.ge car listings. Set search URLs and get notif
 4. Use /run 1, /run 2, etc. to check immediately
 5. The bot will also check periodically and notify you of new listings
 6. Use /reset 1, /reset 2, etc. to clear the "already seen" memory
+7. Use /clear 1, /clear 2, or /clear all to remove searches
 
 <b>🔔 Notifications:</b>
 You'll receive a message when new car listings matching your criteria are found!
@@ -430,16 +434,18 @@ You haven't saved any searches yet.
         message += f"<b>Total:</b> {len(subscriptions)} search(es)\n"
         message += "\n💡 Use /run 1, /run 2, etc. to check a search\n"
         message += "🗑️ Use /reset 1, /reset 2, etc. to clear tracking\n"
-        message += "❌ Use /clear to remove all searches"
+        message += "❌ Use /clear 1, /clear 2, etc. to remove specific\n"
+        message += "❌ Use /clear all to remove all searches"
 
         return self.send_message(chat_id, message)
 
-    def _handle_clear(self, chat_id: int) -> bool:
+    def _handle_clear(self, chat_id: int, argument: str = None) -> bool:
         """
-        Handle /clear command to remove all saved searches
+        Handle /clear command to remove saved searches
 
         Args:
             chat_id: Telegram chat ID
+            argument: Optional argument - "all" to clear all, or search number to clear specific
 
         Returns:
             True if processed successfully
@@ -454,7 +460,7 @@ You haven't saved any searches yet.
             logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
             return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
 
-        # Get current count before clearing
+        # Get current subscriptions
         subscriptions = self.database.get_subscriptions(user_id)
         count = len(subscriptions)
 
@@ -462,20 +468,85 @@ You haven't saved any searches yet.
             message = "📋 You don't have any saved searches to clear."
             return self.send_message(chat_id, message)
 
-        # Clear subscriptions
-        success, error_msg = self.database.clear_subscriptions(user_id)
+        # If no argument provided, show help
+        if not argument:
+            message = f"""❓ <b>Clear searches - Usage:</b>
 
-        if success:
-            message = f"""✅ <b>All searches cleared!</b>
+You have {count} saved search(es).
+
+<b>Options:</b>
+/clear all
+  Remove all {count} searches
+
+/clear 1
+  Remove only search #1
+
+/clear 2
+  Remove only search #2
+
+etc.
+
+<b>Example:</b>
+/clear 1  (removes first search)
+/clear all  (removes all searches)"""
+            return self.send_message(chat_id, message)
+
+        # Handle "all" argument
+        if argument.lower() == "all":
+            success, error_msg = self.database.clear_subscriptions(user_id)
+
+            if success:
+                message = f"""✅ <b>All searches cleared!</b>
 
 Removed {count} search(es) from monitoring.
 
 To add new searches:
 /set &lt;MyAuto.ge URL&gt;"""
+                return self.send_message(chat_id, message)
+            else:
+                message = "❌ Failed to clear searches. Please try again."
+                return self.send_message(chat_id, message)
+
+        # Handle specific search number
+        try:
+            sub_index = int(argument) - 1
+
+            if sub_index < 0:
+                message = "❌ <b>Error:</b> Search number must be 1 or higher"
+                return self.send_message(chat_id, message)
+
+            if sub_index >= len(subscriptions):
+                message = f"❌ <b>Error:</b> You only have {len(subscriptions)} search(es).\n\nUse /list to see all searches."
+                return self.send_message(chat_id, message)
+
+            # Get the subscription to delete
+            subscription = subscriptions[sub_index]
+            subscription_id = subscription.get("id")
+
+            # Delete the specific subscription
+            success, error_msg = self.database.delete_subscription(user_id, subscription_id)
+
+            if success:
+                search_details = self._extract_search_details(subscription.get("search_url", ""))
+                message = f"""✅ <b>Search removed!</b>
+
+Deleted: {search_details}
+
+Remaining searches: {len(subscriptions) - 1}
+
+Use /list to see your current searches."""
+                return self.send_message(chat_id, message)
+            else:
+                message = f"❌ Failed to remove search. {error_msg or 'Please try again.'}"
+                return self.send_message(chat_id, message)
+
+        except ValueError:
+            message = "❌ <b>Error:</b> Invalid argument\n\n<b>Usage:</b>\n/clear all\n/clear 1\n/clear 2\n\netc."
             return self.send_message(chat_id, message)
-        else:
-            message = "❌ Failed to clear searches. Please try again."
-            return self.send_message(chat_id, message)
+
+        except Exception as e:
+            logger.error(f"[ERROR] Error in /clear command: {e}")
+            return self.send_message(chat_id, "❌ An error occurred. Please try again.")
 
     def _handle_status(self, chat_id: int) -> bool:
         """

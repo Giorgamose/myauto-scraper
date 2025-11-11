@@ -27,6 +27,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
+# Import notification formatter for consistent formatting
+try:
+    from notifications_telegram import TelegramNotificationManager
+except ImportError:
+    TelegramNotificationManager = None
+
 
 class TelegramBotBackend:
     """Telegram Bot for managing MyAuto search subscriptions"""
@@ -842,6 +848,7 @@ This search has {len(listings)} total listings available.
     def _format_single_listing_for_run(listing: Dict, search_num: int) -> str:
         """
         Format a single listing for /run command result
+        Uses the same format as notifications_telegram.py for consistency
 
         Args:
             listing: Listing dictionary
@@ -850,49 +857,15 @@ This search has {len(listings)} total listings available.
         Returns:
             Formatted message string
         """
-        make = listing.get("make", "")
-        model = listing.get("model", "")
-        year = listing.get("year", "")
-        title = listing.get("title", "Unknown Vehicle")
+        if not TelegramNotificationManager:
+            # Fallback if notification manager not available
+            return "Error: Cannot format listing"
 
-        # Build title from make/model/year if available
-        if make or model or year:
-            title = f"{make} {model} {year}".strip()
+        # Use the standard notification formatter
+        message = TelegramNotificationManager._format_new_listing(listing)
 
-        price = listing.get("price", "N/A")
-        location = listing.get("location", "N/A")
-        mileage = listing.get("mileage_km", "N/A")
-        fuel_type = listing.get("fuel_type", "N/A")
-        transmission = listing.get("transmission", "N/A")
-        url = listing.get("url", "")
-
-        # Format price
-        if isinstance(price, (int, float)):
-            price_str = f"₾{price:,.0f}"
-        else:
-            price_str = str(price)
-
-        # Format mileage
-        if isinstance(mileage, (int, float)):
-            mileage_str = f"{mileage:,.0f} km"
-        else:
-            mileage_str = str(mileage)
-
-        # Ensure URL is complete
-        if url and not url.startswith("http"):
-            url = f"https://www.myauto.ge{url}"
-
-        message = f"""<b>✅ Found 1 NEW LISTING!</b>
-
-Search #{search_num}
-
-<b>{title}</b>
-
-💰 {price_str} | 📍 {location}
-🛣️ {mileage_str} | ⛽ {fuel_type}
-🔄 {transmission}
-
-<a href="{url}">View full listing →</a>"""
+        # Add search number info at the beginning
+        message = f"<b>Search #{search_num}</b>\n\n" + message
 
         return message
 
@@ -900,55 +873,36 @@ Search #{search_num}
     def _format_multiple_listings_for_run(listings: List[Dict], search_num: int) -> str:
         """
         Format multiple listings for /run command result
+        Uses the same format as notifications_telegram.py for consistency
 
         Args:
             listings: List of listing dictionaries
             search_num: Search number (for context)
 
         Returns:
-            Formatted message string
+            Formatted message string or list of strings for batches
         """
-        message = f"<b>✅ Found {len(listings)} NEW LISTINGS!</b>\n\nSearch #{search_num}\n\n"
+        if not TelegramNotificationManager:
+            # Fallback if notification manager not available
+            return "Error: Cannot format listings"
 
-        for i, listing in enumerate(listings[:10], 1):  # Limit to 10
-            make = listing.get("make", "")
-            model = listing.get("model", "")
-            year = listing.get("year", "")
-            title = listing.get("title", "Unknown")
+        # Handle batching like the notification system does
+        batches = TelegramNotificationManager._split_listings_into_batches(listings, max_listings_per_batch=10)
 
-            # Build title from make/model/year if available
-            if make or model or year:
-                title = f"{make} {model} {year}".strip()
+        if len(batches) == 1:
+            # Single batch - use standard formatter
+            message = TelegramNotificationManager._format_multiple_listings(batches[0])
+        else:
+            # Multiple batches - format with batch info
+            message = TelegramNotificationManager._format_multiple_listings(
+                batches[0],
+                batch_num=1,
+                total_batches=len(batches),
+                total_listings=len(listings)
+            )
 
-            price = listing.get("price", "N/A")
-            location = listing.get("location", "N/A")
-            mileage = listing.get("mileage_km", "N/A")
-            url = listing.get("url", "")
-
-            # Format price
-            if isinstance(price, (int, float)):
-                price_str = f"₾{price:,.0f}"
-            else:
-                price_str = str(price)
-
-            # Format mileage
-            if isinstance(mileage, (int, float)):
-                mileage_str = f"{mileage:,.0f} km"
-            else:
-                mileage_str = str(mileage)
-
-            # Ensure URL is complete
-            if url and not url.startswith("http"):
-                url = f"https://www.myauto.ge{url}"
-
-            message += f"<b>{i}. {title}</b>\n"
-            message += f"   {price_str} | 📍 {location}\n"
-            message += f"   🛣️ {mileage_str}\n"
-            message += f"   <a href=\"{url}\">View →</a>\n\n"
-
-        # Add info about additional listings if any
-        if len(listings) > 10:
-            message += f"<i>... and {len(listings) - 10} more listings</i>"
+        # Add search number info at the beginning
+        message = f"<b>Search #{search_num}</b>\n\n" + message
 
         return message
 

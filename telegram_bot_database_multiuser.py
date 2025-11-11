@@ -156,7 +156,7 @@ class TelegramBotDatabaseMultiUser:
 
             # Create new subscription
             data = {
-                "user_id": user_id,
+                "telegram_user_id": user_id,
                 "search_url": search_url,
                 "search_name": search_name or None,
                 "search_criteria_id": search_criteria_id or None,
@@ -172,8 +172,9 @@ class TelegramBotDatabaseMultiUser:
             )
 
             if response.status_code not in [200, 201]:
-                logger.error(f"[ERROR] Failed to add subscription: {response.status_code}")
-                return False, "Failed to add subscription"
+                error_detail = response.text if response.text else f"HTTP {response.status_code}"
+                logger.error(f"[ERROR] Failed to add subscription: {response.status_code} - {error_detail}")
+                return False, f"Failed to add subscription: {error_detail}"
 
             # Log event
             self._log_event(user_id, "subscription_added", {
@@ -200,7 +201,7 @@ class TelegramBotDatabaseMultiUser:
             List of subscription dictionaries
         """
         try:
-            filter_str = f"user_id=eq.{user_id}"
+            filter_str = f"telegram_user_id=eq.{user_id}"
             if active_only:
                 filter_str += "&is_active=eq.true"
 
@@ -281,7 +282,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             response = self.db._make_request(
                 'PATCH',
-                f"{self.db.base_url}/telegram_user_subscriptions?user_id=eq.{user_id}",
+                f"{self.db.base_url}/telegram_user_subscriptions?telegram_user_id=eq.{user_id}",
                 json={"is_active": False},
                 headers=self.db.headers,
                 timeout=10
@@ -313,7 +314,7 @@ class TelegramBotDatabaseMultiUser:
         """
         try:
             data = {
-                "user_id": user_id,
+                "telegram_user_id": user_id,
                 "listing_id": listing_id
             }
 
@@ -344,7 +345,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_user_seen_listings?user_id=eq.{user_id}",
+                f"{self.db.base_url}/telegram_user_seen_listings?telegram_user_id=eq.{user_id}",
                 headers=self.db.headers,
                 timeout=10
             )
@@ -372,7 +373,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_user_seen_listings?user_id=eq.{user_id}&listing_id=eq.{listing_id}",
+                f"{self.db.base_url}/telegram_user_seen_listings?telegram_user_id=eq.{user_id}&listing_id=eq.{listing_id}",
                 headers=self.db.headers,
                 timeout=10
             )
@@ -405,7 +406,7 @@ class TelegramBotDatabaseMultiUser:
         """Internal event logging"""
         try:
             data = {
-                "user_id": user_id,
+                "telegram_user_id": user_id,
                 "event_type": event_type,
                 "event_data": event_data or {}
             }
@@ -438,7 +439,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_bot_events?user_id=eq.{user_id}&order=created_at.desc&limit={limit}",
+                f"{self.db.base_url}/telegram_bot_events?telegram_user_id=eq.{user_id}&order=created_at.desc&limit={limit}",
                 headers=self.db.headers,
                 timeout=10
             )
@@ -509,7 +510,7 @@ class TelegramBotDatabaseMultiUser:
             encoded_url = quote(search_url, safe='')
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_user_subscriptions?user_id=eq.{user_id}&search_url=eq.{encoded_url}",
+                f"{self.db.base_url}/telegram_user_subscriptions?telegram_user_id=eq.{user_id}&search_url=eq.{encoded_url}",
                 headers=self.db.headers,
                 timeout=10
             )
@@ -568,7 +569,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_user_subscriptions?user_id=eq.{user_id}&is_active=eq.true&select=id",
+                f"{self.db.base_url}/telegram_user_subscriptions?telegram_user_id=eq.{user_id}&is_active=eq.true&select=id",
                 headers=self.db.headers,
                 timeout=10
             )
@@ -612,7 +613,7 @@ class TelegramBotDatabaseMultiUser:
                 try:
                     response = self.db._make_request(
                         'DELETE',
-                        f"{self.db.base_url}/telegram_user_seen_listings?user_id=eq.{user_id}&listing_id=eq.{listing_id}",
+                        f"{self.db.base_url}/telegram_user_seen_listings?telegram_user_id=eq.{user_id}&listing_id=eq.{listing_id}",
                         headers=self.db.headers,
                         timeout=10
                     )

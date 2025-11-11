@@ -57,6 +57,7 @@ class ComprehensiveBotTestSuite:
         self.user_id = None
         self.subscription_ids = {}
         self.start_time = datetime.now()
+        self.scraper = None  # Single shared scraper instance
 
         # Import bot components with retry
         max_retries = 3
@@ -65,6 +66,20 @@ class ComprehensiveBotTestSuite:
                 from telegram_bot_database_multiuser import TelegramBotDatabaseMultiUser
                 self.database = TelegramBotDatabaseMultiUser()
                 logger.info("[OK] Database initialized")
+
+                # Initialize scraper once (thread-safe for sync API)
+                try:
+                    from scraper import MyAutoScraper
+                    from utils import load_config_file, get_config_path
+
+                    config = load_config_file(get_config_path())
+                    if config:
+                        self.scraper = MyAutoScraper(config)
+                        logger.info("[OK] Scraper initialized (will be reused for all tests)")
+                except Exception as e:
+                    logger.warning(f"[WARN] Failed to initialize scraper: {e}")
+                    self.scraper = None
+
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -181,19 +196,14 @@ class ComprehensiveBotTestSuite:
         """TEST 3: Single listing (1 result)"""
         self.print_section("TEST 3: SINGLE LISTING SCENARIO")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
-
-            config = load_config_file(get_config_path())
-            if not config:
-                self.test("Single listing - Load config", False, "No config")
+            if not self.scraper:
+                self.test("Single listing - Scraper available", False, "Scraper not initialized")
                 return False
 
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
             logger.info("[*] Fetching single listing scenario...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             # Test 1 listing (if available)
             if listings and len(listings) >= 1:
@@ -221,16 +231,16 @@ class ComprehensiveBotTestSuite:
         """TEST 4: Batch boundary - Exactly 10 listings"""
         self.print_section("TEST 4: BATCH BOUNDARY - 10 LISTINGS")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("Batch boundary - Scraper available", False, "Scraper not initialized")
+                return False
+
             from notifications_telegram import TelegramNotificationManager
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
             logger.info("[*] Fetching listings for batch boundary test...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) >= 10:
                 test_listings = listings[:10]
@@ -262,16 +272,16 @@ class ComprehensiveBotTestSuite:
         """TEST 5: Batch boundary - 11 listings (should create 2 batches)"""
         self.print_section("TEST 5: BATCH BOUNDARY - 11 LISTINGS (2 BATCHES)")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("Batch split - Scraper available", False, "Scraper not initialized")
+                return False
+
             from notifications_telegram import TelegramNotificationManager
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
             logger.info("[*] Fetching listings for 11-item batch test...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) >= 11:
                 test_listings = listings[:11]
@@ -314,16 +324,16 @@ class ComprehensiveBotTestSuite:
         """TEST 6: Multiple batches - 20 listings (2 batches)"""
         self.print_section("TEST 6: MULTIPLE BATCHES - 20 LISTINGS")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("20 listings - Scraper available", False, "Scraper not initialized")
+                return False
+
             from notifications_telegram import TelegramNotificationManager
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["medium"], "parameters": {}}
 
             logger.info("[*] Fetching listings for 20-item batch test...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) >= 20:
                 test_listings = listings[:20]
@@ -353,16 +363,16 @@ class ComprehensiveBotTestSuite:
         """TEST 7: Many batches - 30 listings (3 batches)"""
         self.print_section("TEST 7: MANY BATCHES - 30 LISTINGS")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("30 listings - Scraper available", False, "Scraper not initialized")
+                return False
+
             from notifications_telegram import TelegramNotificationManager
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["large"], "parameters": {}}
 
             logger.info("[*] Fetching listings for 30-item batch test...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) >= 30:
                 test_listings = listings[:30]
@@ -408,14 +418,13 @@ class ComprehensiveBotTestSuite:
                 self.test("Deduplication", False, "No user ID")
                 return False
 
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("Deduplication", False, "Scraper not initialized")
+                return False
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) > 0:
                 # Get first 3 listings
@@ -437,7 +446,7 @@ class ComprehensiveBotTestSuite:
                          f"Marked {len(test_ids)} listings")
 
                 # Fetch again and verify deduplication
-                new_listings = scraper.fetch_search_results(search_config)
+                new_listings = self.scraper.fetch_search_results(search_config)
                 new_count = len([l for l in new_listings if l.get('listing_id') not in test_ids])
 
                 self.test("Deduplication - New listings identified", new_count >= 0,
@@ -461,14 +470,13 @@ class ComprehensiveBotTestSuite:
                 self.test("Mixed seen/new", False, "No user ID")
                 return False
 
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("Mixed seen/new", False, "Scraper not initialized")
+                return False
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings and len(listings) >= 5:
                 # Mark first 3 as seen
@@ -558,16 +566,16 @@ class ComprehensiveBotTestSuite:
         """TEST 11: Message size validation - Verify 4096 char limit"""
         self.print_section("TEST 11: MESSAGE SIZE LIMITS (4096 CHARS)")
         try:
-            from scraper import MyAutoScraper
-            from utils import load_config_file, get_config_path
+            if not self.scraper:
+                self.test("Message size test", False, "Scraper not initialized")
+                return False
+
             from notifications_telegram import TelegramNotificationManager
 
-            config = load_config_file(get_config_path())
-            scraper = MyAutoScraper(config)
             search_config = {"base_url": TEST_URLS["small"], "parameters": {}}
 
             logger.info("[*] Fetching listings for size test...")
-            listings = scraper.fetch_search_results(search_config)
+            listings = self.scraper.fetch_search_results(search_config)
 
             if listings:
                 batches = TelegramNotificationManager._split_listings_into_batches(listings[:30], max_listings_per_batch=10)
@@ -774,7 +782,7 @@ class ComprehensiveBotTestSuite:
         # Save report
         report_path = "test_comprehensive_report.txt"
         try:
-            with open(report_path, 'w') as f:
+            with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(f"COMPREHENSIVE TELEGRAM BOT TEST REPORT\n")
                 f.write(f"{'='*70}\n")
                 f.write(f"Timestamp: {self.start_time}\n")

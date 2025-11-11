@@ -174,7 +174,18 @@ class TelegramBotDatabaseMultiUser:
             if response.status_code not in [200, 201]:
                 error_detail = response.text if response.text else f"HTTP {response.status_code}"
                 logger.error(f"[ERROR] Failed to add subscription: {response.status_code} - {error_detail}")
-                return False, f"Failed to add subscription: {error_detail}"
+                return False, None
+
+            # Extract subscription ID from response
+            try:
+                response_data = response.json()
+                subscription_id = response_data.get('id') if isinstance(response_data, dict) else None
+
+                # If response is a list with one item, get ID from first item
+                if isinstance(response_data, list) and len(response_data) > 0:
+                    subscription_id = response_data[0].get('id')
+            except:
+                subscription_id = None
 
             # Log event
             self._log_event(user_id, "subscription_added", {
@@ -183,7 +194,7 @@ class TelegramBotDatabaseMultiUser:
             })
 
             logger.info(f"[+] Subscription added for user {user_id}: {search_name or search_url}")
-            return True, None
+            return True, subscription_id
 
         except Exception as e:
             logger.error(f"[ERROR] Failed to add subscription: {e}")
@@ -268,6 +279,21 @@ class TelegramBotDatabaseMultiUser:
         except Exception as e:
             logger.error(f"[ERROR] Failed to delete subscription: {e}")
             return False, str(e)
+
+    def remove_subscription(self, user_id: str, subscription_id: str) -> bool:
+        """
+        Remove a subscription (alias for delete_subscription for backward compatibility)
+        Returns just the boolean success status
+
+        Args:
+            user_id: User ID (for authorization check)
+            subscription_id: Subscription ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        success, error = self.delete_subscription(user_id, subscription_id, soft_delete=True)
+        return success
 
     def clear_subscriptions(self, user_id: str) -> Tuple[bool, Optional[str]]:
         """

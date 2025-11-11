@@ -57,7 +57,7 @@ jobs:
           import os
           sys.path.insert(0, '.')
           from telegram_bot_scheduler import TelegramBotScheduler
-          from telegram_bot_database_supabase import TelegramBotDatabaseSupabase
+          from telegram_bot_database_multiuser import TelegramBotDatabaseMultiUser
           from telegram_bot_backend import TelegramBotBackend
           from scraper import MyAutoScraper
           from notifications import NotificationManager
@@ -77,8 +77,8 @@ jobs:
               print('[*] Configuration loaded')
 
               # Initialize components
-              print('[*] Initializing Supabase database...')
-              db = TelegramBotDatabaseSupabase()
+              print('[*] Initializing Supabase database (Multi-User)...')
+              db = TelegramBotDatabaseMultiUser()
               print('[OK] Database initialized')
 
               print('[*] Initializing scraper...')
@@ -86,7 +86,9 @@ jobs:
               print('[OK] Scraper initialized')
 
               print('[*] Initializing bot backend...')
+              bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
               bot = TelegramBotBackend(
+                  bot_token=bot_token,
                   database=db,
                   scraper=scraper,
                   config=config
@@ -102,7 +104,7 @@ jobs:
               scheduler = TelegramBotScheduler(
                   database=db,
                   bot_backend=bot,
-                  scraper=scraper,
+                  config=config,
                   notifications_manager=notifier,
                   check_interval_minutes=15,
                   daemon=False

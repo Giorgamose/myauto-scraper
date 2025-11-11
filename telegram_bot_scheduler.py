@@ -31,7 +31,7 @@ class TelegramBotScheduler(threading.Thread):
     """Background scheduler for checking user subscriptions for new listings"""
 
     def __init__(self, database, bot_backend, config, notifications_manager,
-                 check_interval_minutes: int = 10, daemon: bool = True):
+                 check_interval_minutes: int = 10, daemon: bool = True, scraper=None):
         """
         Initialize scheduler
 
@@ -42,13 +42,14 @@ class TelegramBotScheduler(threading.Thread):
             notifications_manager: NotificationManager instance
             check_interval_minutes: How often to check (in minutes)
             daemon: Run as daemon thread
+            scraper: Optional scraper instance (if None, will be created in run() method)
         """
         super().__init__(daemon=daemon)
 
         self.database = database
         self.bot_backend = bot_backend
         self.config = config  # Store config for creating scraper in thread
-        self.scraper = None  # Will be created in run() method (thread-safe)
+        self.scraper = scraper  # Use provided scraper or create in run() method (thread-safe)
         self.notifications_manager = notifications_manager
 
         self.check_interval = check_interval_minutes * 60  # Convert to seconds
@@ -69,18 +70,21 @@ class TelegramBotScheduler(threading.Thread):
         self.running = True
         logger.info("[*] Scheduler started")
 
-        # Create scraper instance in this thread (thread-safe)
+        # Create scraper instance in this thread (thread-safe) only if not already provided
         # This ensures the Playwright browser is tied to the scheduler thread
-        try:
-            if self.config:
-                self.scraper = MyAutoScraper(self.config)
-                logger.info("[OK] Scraper created in scheduler thread (thread-safe)")
-            else:
-                logger.error("[ERROR] Configuration not available for scraper initialization")
-        except Exception as e:
-            logger.error(f"[WARN] Failed to initialize scraper in scheduler thread: {e}")
-            logger.info("[*] Scheduler will continue but listing enrichment will be disabled")
-            self.scraper = None
+        if not self.scraper:
+            try:
+                if self.config:
+                    self.scraper = MyAutoScraper(self.config)
+                    logger.info("[OK] Scraper created in scheduler thread (thread-safe)")
+                else:
+                    logger.error("[ERROR] Configuration not available for scraper initialization")
+            except Exception as e:
+                logger.error(f"[WARN] Failed to initialize scraper in scheduler thread: {e}")
+                logger.info("[*] Scheduler will continue but listing enrichment will be disabled")
+                self.scraper = None
+        else:
+            logger.info("[OK] Using provided scraper instance")
 
         while self.running:
             try:

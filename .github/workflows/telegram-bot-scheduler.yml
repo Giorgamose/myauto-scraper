@@ -1,0 +1,200 @@
+name: 🤖 Telegram Bot Scheduler - Runs Every 15 Minutes
+
+on:
+  schedule:
+    # Run every 15 minutes (at :00, :15, :30, :45 of every hour)
+    - cron: '*/15 * * * *'
+
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+  # Run on push to main (for code updates)
+  push:
+    branches:
+      - main
+    paths:
+      - 'telegram_bot_*.py'
+      - 'scraper.py'
+      - '.github/workflows/telegram-bot-scheduler.yml'
+
+# Prevent concurrent runs - only one scheduler should run at a time
+concurrency:
+  group: telegram-bot-scheduler
+  cancel-in-progress: false
+
+jobs:
+  scheduler-check:
+    name: Telegram Bot Scheduler Check Cycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🎭 Install Playwright browsers
+        run: |
+          python -m playwright install --with-deps chromium
+          echo "[OK] Playwright installed"
+
+      - name: 📝 Create environment file
+        run: |
+          cat > .env.local << 'EOF'
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_API_KEY=${{ secrets.SUPABASE_API_KEY }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_NOTIFICATION_CHANNEL_ID }}
+          TELEGRAM_NOTIFICATION_CHANNEL_ID=${{ secrets.TELEGRAM_NOTIFICATION_CHANNEL_ID }}
+          CONFIG_PATH=./config.json
+          LOG_LEVEL=INFO
+          EOF
+          echo "[OK] Environment configured"
+
+      - name: ✅ Verify secrets
+        run: |
+          echo "Checking required GitHub Secrets..."
+          [ -n "${{ secrets.SUPABASE_URL }}" ] && echo "✓ SUPABASE_URL" || echo "✗ SUPABASE_URL (missing)"
+          [ -n "${{ secrets.SUPABASE_API_KEY }}" ] && echo "✓ SUPABASE_API_KEY" || echo "✗ SUPABASE_API_KEY (missing)"
+          [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo "✓ TELEGRAM_BOT_TOKEN" || echo "✗ TELEGRAM_BOT_TOKEN (missing)"
+          [ -n "${{ secrets.TELEGRAM_NOTIFICATION_CHANNEL_ID }}" ] && echo "✓ TELEGRAM_NOTIFICATION_CHANNEL_ID" || echo "✗ TELEGRAM_NOTIFICATION_CHANNEL_ID (missing)"
+
+      - name: 🚀 Run Scheduler Check Cycle
+        run: |
+          python << 'PYTHON_SCRIPT'
+          import sys
+          import os
+          import logging
+          from datetime import datetime
+
+          # Setup logging
+          logging.basicConfig(
+              level=logging.INFO,
+              format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+          )
+          logger = logging.getLogger('scheduler')
+
+          sys.path.insert(0, '.')
+
+          print("\n" + "=" * 80)
+          print("🤖 TELEGRAM BOT SCHEDULER CHECK CYCLE")
+          print("=" * 80)
+          print(f"⏰ Start Time: {datetime.now().isoformat()}")
+          print("=" * 80 + "\n")
+
+          try:
+              # Step 1: Import modules
+              logger.info("Step 1/5: Importing modules...")
+              from telegram_bot_scheduler import TelegramBotScheduler
+              from telegram_bot_database_multiuser import TelegramBotDatabaseMultiUser
+              from telegram_bot_backend import TelegramBotBackend
+              from scraper import MyAutoScraper
+              from notifications import NotificationManager
+              from utils import load_config_file, get_config_path
+              logger.info("✓ Modules imported")
+
+              # Step 2: Load configuration
+              logger.info("Step 2/5: Loading configuration...")
+              config_path = get_config_path()
+              config = load_config_file(config_path)
+              if not config:
+                  raise Exception(f"Failed to load config from {config_path}")
+              logger.info(f"✓ Configuration loaded from: {config_path}")
+
+              # Step 3: Initialize components
+              logger.info("Step 3/5: Initializing components...")
+              logger.info("  • Initializing database...")
+              db = TelegramBotDatabaseMultiUser()
+              logger.info("  ✓ Database ready")
+
+              logger.info("  • Initializing scraper...")
+              scraper = MyAutoScraper(config)
+              logger.info("  ✓ Scraper ready")
+
+              logger.info("  • Initializing bot backend...")
+              bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+              bot = TelegramBotBackend(
+                  bot_token=bot_token,
+                  database=db,
+                  scraper=scraper,
+                  config=config
+              )
+              logger.info("  ✓ Bot backend ready")
+
+              logger.info("  • Initializing notifications...")
+              notifier = NotificationManager()
+              logger.info("  ✓ Notifications ready")
+
+              # Step 4: Create scheduler
+              logger.info("Step 4/5: Creating scheduler...")
+              scheduler = TelegramBotScheduler(
+                  database=db,
+                  bot_backend=bot,
+                  scraper=scraper,
+                  config=config,
+                  notifications_manager=notifier,
+                  check_interval_minutes=15,
+                  daemon=False
+              )
+              logger.info("✓ Scheduler created")
+
+              # Step 5: Execute check cycle
+              print("\n" + "=" * 80)
+              logger.info("Step 5/5: Executing check cycle...")
+              print("=" * 80 + "\n")
+
+              scheduler._execute_check_cycle()
+
+              print("\n" + "=" * 80)
+              print("✅ SCHEDULER CHECK COMPLETED SUCCESSFULLY")
+              print("=" * 80)
+              print(f"⏰ End Time: {datetime.now().isoformat()}")
+              print("=" * 80 + "\n")
+
+              logger.info("Check cycle completed - next run in 15 minutes")
+
+          except Exception as e:
+              print("\n" + "=" * 80)
+              print("❌ SCHEDULER CHECK FAILED")
+              print("=" * 80)
+              logger.error(f"Error: {e}")
+              print("=" * 80 + "\n")
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          PYTHON_SCRIPT
+
+      - name: 📊 Save Workflow Summary
+        if: always()
+        run: |
+          echo "========================================================================"
+          echo "✨ Workflow Summary"
+          echo "========================================================================"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Status: ${{ job.status }}"
+          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "========================================================================"
+
+      - name: 📤 Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-logs-${{ github.run_number }}
+          path: |
+            .logs/
+            *.log
+          retention-days: 30
+          if-no-files-found: ignore

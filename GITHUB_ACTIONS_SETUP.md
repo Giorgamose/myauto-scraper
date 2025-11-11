@@ -1,122 +1,192 @@
-# 🚀 GitHub Actions Setup - Continuous Bot Monitoring
+# GitHub Actions Scheduler Setup Guide
 
-Run your Telegram bot automatically on GitHub! The bot will check subscriptions every 15 minutes and send notifications.
+## ✅ You Already Have GitHub Actions Setup!
 
----
-
-## What This Does
-
-✅ Runs bot check cycle **every 15 minutes** (24/7)
-✅ Fetches new listings from saved searches
-✅ Sends notifications to your Telegram channel
-✅ Logs all activity for debugging
-✅ **FREE** - uses GitHub's free runners
+Your scheduler is already configured to run automatically on GitHub Actions every 15 minutes!
 
 ---
 
-## Step 1: Set Up GitHub Secrets
+## What You Have
 
-Your bot needs credentials stored securely in GitHub.
+### 1. **telegram-bot-scheduler.yml** (NEW & BEST)
+- Runs every 15 minutes automatically
+- 24/7 coverage (no computer needed)
+- Better logging & error handling
+- Location: `.github/workflows/telegram-bot-scheduler.yml`
 
-### A. Go to Your Repository Settings
-
-1. Go to: **https://github.com/YOUR_USERNAME/myauto-scraper/settings/secrets/actions**
-2. Click **"New repository secret"**
-
-### B. Add These Secrets
-
-**Secret 1: SUPABASE_URL**
-- Name: `SUPABASE_URL`
-- Value: (copy from your `.env.local`)
-  ```
-  https://efohkibukutjvrrhhxdn.supabase.co
-  ```
-- Click **"Add secret"**
-
-**Secret 2: SUPABASE_API_KEY**
-- Name: `SUPABASE_API_KEY`
-- Value: (copy from your `.env.local`)
-  ```
-  sb_secret_AQsUE2fqqZnArFz_WV6qBg_L4kPjXwt
-  ```
-- Click **"Add secret"**
-
-**Secret 3: TELEGRAM_BOT_TOKEN**
-- Name: `TELEGRAM_BOT_TOKEN`
-- Value: (from your `.env.local`)
-  ```
-  8531271294:AAH7Od2UldndVviXAPxFXxxolqIjodW4BY4
-  ```
-- Click **"Add secret"**
-
-**Secret 4: TELEGRAM_CHAT_ID**
-- Name: `TELEGRAM_CHAT_ID`
-- Value: (from your `.env.local`)
-  ```
-  -1003275746217
-  ```
-- Click **"Add secret"**
+### 2. **telegram-bot.yml** (ORIGINAL)
+- Also works fine
+- Same functionality as new one
+- Location: `.github/workflows/telegram-bot.yml`
 
 ---
 
-## Step 2: Verify GitHub Secrets Are Set
+## Step 1: Add GitHub Secrets (Required!)
 
-1. Go to: **https://github.com/YOUR_USERNAME/myauto-scraper/settings/secrets/actions**
-2. You should see 4 secrets listed:
-   - ✅ SUPABASE_URL
-   - ✅ SUPABASE_API_KEY
-   - ✅ TELEGRAM_BOT_TOKEN
-   - ✅ TELEGRAM_CHAT_ID
+Your workflows need 4 secrets. Go to your GitHub repository:
 
----
+### How to Add Secrets:
+1. Click **Settings** (top right)
+2. Click **Secrets and variables** → **Actions**
+3. Click **New repository secret**
+4. Add each secret below:
 
-## Step 3: Push Workflow to GitHub
+### Secret #1: SUPABASE_URL
+```
+Name: SUPABASE_URL
+Value: https://xxxxx.supabase.co
+```
+(Find in Supabase Dashboard → Settings → API)
 
-The workflow file `.github/workflows/telegram-bot.yml` is already created locally. Now:
+### Secret #2: SUPABASE_API_KEY
+```
+Name: SUPABASE_API_KEY
+Value: eyJhbGc...
+```
+(Find in Supabase Dashboard → Settings → API → anon key)
 
-1. **Push to GitHub:**
-   ```bash
-   git add .github/workflows/telegram-bot.yml
-   git commit -m "Add: GitHub Actions workflow for Telegram bot"
-   git push origin main
-   ```
+### Secret #3: TELEGRAM_BOT_TOKEN
+```
+Name: TELEGRAM_BOT_TOKEN
+Value: 123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+```
+(Get from @BotFather on Telegram)
 
-2. **Verify it was added:**
-   - Go to: **https://github.com/YOUR_USERNAME/myauto-scraper/actions**
-   - You should see: **"Telegram Bot - Continuous Monitoring"** workflow
+### Secret #4: TELEGRAM_NOTIFICATION_CHANNEL_ID
+```
+Name: TELEGRAM_NOTIFICATION_CHANNEL_ID
+Value: 123456789
+```
+(Get your chat ID from @userinfobot on Telegram)
 
----
-
-## Step 4: Test the Workflow
-
-### Option A: Manual Trigger (Recommended First)
-
-1. Go to: **https://github.com/YOUR_USERNAME/myauto-scraper/actions**
-2. Click: **"Telegram Bot - Continuous Monitoring"**
-3. Click: **"Run workflow"** → **"Run workflow"**
-4. Watch it run!
-
----
-
-## Pricing (FREE!)
-
-✅ **GitHub Actions is FREE** for public repositories!
-
-Free limits:
-- **2,000 actions minutes/month** (per account)
-- **Every 15 min:** ~2,880 runs/month = ~48 hours
-- **Remaining:** 1,952 minutes for other workflows
-
-For your use case, **the free plan is more than enough!** 🎉
+**All 4 should appear in your Secrets list after adding!**
 
 ---
 
-## Next Steps
+## Step 2: Stop Running Bot Locally
 
-✅ Set up GitHub Secrets
-✅ Push workflow file to GitHub (.github/workflows/telegram-bot.yml)
-✅ Test with manual trigger
-✅ Receive notifications in Telegram
+Since scheduler now runs on GitHub:
 
-That's it! Your bot is now running 24/7 on GitHub! 🚀
+```bash
+# Stop the running bot (Ctrl+C if running)
+# Don't run: python telegram_bot_main.py anymore
 
+# If running in background, kill it:
+pkill -f "telegram_bot_main"
+```
+
+---
+
+## Step 3: Test It
+
+### Manual Run (Right Now)
+1. Go to GitHub → **Actions** tab
+2. Click **"🤖 Telegram Bot Scheduler"** workflow
+3. Click **"Run workflow"** button
+4. Select **main** branch
+5. Click **"Run workflow"**
+6. Wait 30-60 seconds
+7. Click the running job to see logs
+
+### View Logs
+1. Go to **Actions** tab
+2. Click any "🤖 Telegram Bot Scheduler" run
+3. Click **"Run Scheduler Check Cycle"** step
+4. See full output and any errors
+
+---
+
+## Schedule
+
+**Automatic runs:** Every 15 minutes at :00, :15, :30, :45
+
+Examples:
+- 00:00 - runs
+- 00:15 - runs
+- 00:30 - runs
+- 00:45 - runs
+- 01:00 - runs
+... continues 24/7
+
+### Change Schedule (Optional)
+
+Edit `.github/workflows/telegram-bot-scheduler.yml`:
+
+Find:
+```yaml
+- cron: '*/15 * * * *'
+```
+
+Options:
+- **Every 10 min:** `*/10 * * * *`
+- **Every 30 min:** `*/30 * * * *`
+- **Every hour:** `0 * * * *`
+- **Daily 9 AM UTC:** `0 9 * * *`
+
+---
+
+## FAQ
+
+**Q: Where does it run?**
+A: GitHub's servers (ubuntu-latest). Not your computer!
+
+**Q: Do I need to keep my PC on?**
+A: No! GitHub runs it for you 24/7.
+
+**Q: What if I get an error?**
+A: Check GitHub Actions logs for the error message. Usually it's a wrong secret or missing config.json.
+
+**Q: Cost?**
+A: Free! GitHub includes 2000 minutes/month. Your bot uses ~5 min per run.
+
+**Q: How do I test?**
+A: Go to Actions → "Run workflow" button → runs immediately.
+
+---
+
+## Common Issues & Solutions
+
+### Issue: "Failed to load config"
+**Solution:** Make sure `config.json` exists in your repository
+
+### Issue: "Failed to connect to Supabase"
+**Solution:** Check SUPABASE_URL and SUPABASE_API_KEY secrets are correct
+
+### Issue: "Telegram error"
+**Solution:** Check TELEGRAM_BOT_TOKEN is correct
+
+### Issue: No runs appearing
+**Solution:** GitHub Actions might be disabled. Go to Actions tab and enable it.
+
+---
+
+## Summary
+
+✅ Scheduler configured
+✅ Runs every 15 minutes automatically
+✅ 24/7 monitoring (no computer needed)
+✅ Full logging available
+✅ Can manually trigger anytime
+
+### Next Steps:
+1. Add 4 GitHub Secrets
+2. Click "Run workflow" to test
+3. Check logs for success
+4. Stop running bot locally
+5. Done! It runs automatically now
+
+---
+
+## Monitoring
+
+### How to know it's working:
+- ✅ Check GitHub Actions logs (show successful runs)
+- ✅ Receive Telegram notifications for new listings
+- ✅ See "✅ SCHEDULER CHECK COMPLETED SUCCESSFULLY" in logs
+
+### How to check:
+1. Go to **Actions** tab
+2. Click **"🤖 Telegram Bot Scheduler"**
+3. See list of past runs with status (✓ or ✗)
+
+That's it! Your scheduler is now automated! 🚀

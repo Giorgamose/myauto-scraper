@@ -104,6 +104,7 @@ jobs:
               scheduler = TelegramBotScheduler(
                   database=db,
                   bot_backend=bot,
+                  scraper=scraper,
                   config=config,
                   notifications_manager=notifier,
                   check_interval_minutes=15,

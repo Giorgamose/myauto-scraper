@@ -659,126 +659,67 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 return self.send_message(chat_id, "❌ Search functionality not available. Please try again later.")
 
             try:
-                # Import here to avoid circular imports
-                from scraper import MyAutoScraper
+                # Try to fetch fresh listings for this search
+                logger.info(f"[*] /run command - attempting fresh search")
 
-                # Create fresh scraper instance (avoid threading/greenlet issues)
-                scraper = MyAutoScraper(self.config)
+                # Use the scraper if available (initialized in main thread)
+                if self.scraper:
+                    try:
+                        search_config = {
+                            "base_url": search_url,
+                            "parameters": {}
+                        }
 
-                search_config = {
-                    "base_url": search_url,
-                    "parameters": {}
-                }
+                        # Try to scrape fresh results
+                        listings = self.scraper.fetch_search_results(search_config)
 
-                # Run scraper in thread pool to avoid Playwright asyncio conflicts
-                # Playwright sync API doesn't work inside asyncio event loops,
-                # so we run it in a separate thread with its own event loop context
-                listings = []
-                max_retries = 2
-                retry_delay = 3  # seconds
+                        if listings:
+                            logger.info(f"[OK] /run fetched {len(listings)} fresh listings")
 
-                for attempt in range(max_retries):
-                    with ThreadPoolExecutor(max_workers=1) as executor:
-                        listings = executor.submit(scraper.fetch_search_results, search_config).result(timeout=30)
+                            # Get current user's seen listings
+                            new_count = 0
+                            for listing in listings:
+                                listing_id = listing.get("listing_id")
+                                if listing_id and not self.database.has_user_seen_listing(user_id, listing_id):
+                                    new_count += 1
+                                    self.database.mark_listing_seen(user_id, listing_id)
 
-                    if listings:
-                        # Got results, exit retry loop
-                        logger.info(f"[OK] Fetched {len(listings)} listings on attempt {attempt + 1}")
-                        break
-                    elif attempt < max_retries - 1:
-                        # No results and we have retries left
-                        logger.info(f"[*] No listings found on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                    else:
-                        # Last attempt, still no results
-                        logger.warning(f"[WARN] No listings found after {max_retries} attempts")
+                            message = f"""<b>✅ Search Results</b>
 
-                if not listings:
-                    message = f"<b>✅ Check Complete</b>\n\nNo listings found for search #{sub_index + 1}.\n\nThe search may be empty or MyAuto.ge may be rate limiting. Please try again in a moment.\n\n<code>{search_url[:60]}...</code>"
-                    return self.send_message(chat_id, message)
+📊 Total: {len(listings)} listings
+🆕 New: {new_count} new listings
 
-                # Limit /run results to first 100 to prevent overwhelming the bot
-                # Large searches can have 100K+ listings which would take hours to send
-                max_run_results = 100
-                if len(listings) > max_run_results:
-                    logger.info(f"[*] Limiting /run results from {len(listings)} to {max_run_results} listings")
-                    listings_to_check = listings[:max_run_results]
-                    listing_count_msg = f"Showing first {max_run_results} of {len(listings)} listings"
+<i>The scheduler will automatically notify you of new listings every 15 minutes.</i>"""
+                            self.send_message(chat_id, message)
+                            self.database.update_last_checked(sub_id)
+                            return True
+                    except Exception as scrape_error:
+                        logger.warning(f"[WARN] Scraper error in /run: {scrape_error} - falling back to database")
+
+                # Fallback: show database results if scraper fails or unavailable
+                logger.info(f"[*] /run fallback - showing database results")
+                recent_seen = self.database.get_user_seen_listings(user_id)
+
+                if recent_seen:
+                    logger.info(f"[*] Found {len(recent_seen)} recent tracked listings from database")
+                    message = f"<b>✅ Status Check</b>\n\n📋 You have {len(recent_seen)} tracked listings for search #{sub_index + 1}.\n\n<i>Note: Scheduler will check every 15 minutes for new listings.</i>"
                 else:
-                    listings_to_check = listings
-                    listing_count_msg = None
+                    logger.info(f"[*] No tracked listings yet for search {sub_index + 1}")
+                    message = f"<b>✅ Status Check</b>\n\n📋 No tracked listings yet for search #{sub_index + 1}.\n\n<i>The scheduler will check every 15 minutes and notify you when it finds new listings.</i>"
 
-                # Filter for new listings (not seen before)
-                new_listings = []
-
-                for listing in listings_to_check:
-                    listing_id = listing.get("listing_id")
-
-                    if listing_id and not self.database.has_user_seen_listing(user_id, listing_id):
-                        new_listings.append(listing)
-                        # Mark as seen
-                        self.database.mark_listing_seen(user_id, listing_id)
-                        logger.debug(f"[*] New listing marked: {listing_id}")
-
-                if new_listings:
-                    logger.info(f"[+] Found {len(new_listings)} new listings for subscription {sub_id}")
-
-                    # Send limit notice if applicable
-                    if listing_count_msg:
-                        limit_msg = f"⚠️ <b>Large Search Result</b>\n\n{listing_count_msg}\n\nScheduler notifications will show complete updates."
-                        self.send_message(chat_id, limit_msg)
-                        time.sleep(1)  # Delay before sending results
-
-                    # Format and send results
-                    # Note: We don't fetch detailed information here because /run executes in the message handler thread
-                    # and Playwright browser instance can't be used across threads. The scheduler (which has its own
-                    # thread) will fetch detailed information when sending notifications.
-                    if len(new_listings) == 1:
-                        message = self._format_single_listing_for_run(new_listings[0], sub_index + 1)
-                        self.send_message(chat_id, message)
-                    else:
-                        # For multiple listings, split into batches and send each one
-                        from notifications_telegram import TelegramNotificationManager
-                        batches = TelegramNotificationManager._split_listings_into_batches(new_listings, max_listings_per_batch=10)
-
-                        for batch_num, batch in enumerate(batches, 1):
-                            # Format batch with batch info if multiple batches
-                            if len(batches) > 1:
-                                message = TelegramNotificationManager._format_multiple_listings(
-                                    batch,
-                                    batch_num=batch_num,
-                                    total_batches=len(batches),
-                                    total_listings=len(new_listings)
-                                )
-                            else:
-                                message = TelegramNotificationManager._format_multiple_listings(batch)
-
-                            # Add search context
-                            message = f"<b>Search #{sub_index + 1}</b>\n\n" + message
-
-                            success = self.send_message(chat_id, message)
-
-                            if success:
-                                logger.info(f"[OK] Batch {batch_num}/{len(batches)} sent to chat {chat_id}")
-                            else:
-                                logger.warning(f"[WARN] Failed to send batch {batch_num}/{len(batches)} to chat {chat_id}")
-
-                            # Add delay between batches to prevent rate limiting
-                            if batch_num < len(batches):
-                                time.sleep(1)
-
-                else:
-                    message = f"<b>✅ Check Complete</b>\n\nNo <b>new</b> listings found for search #{sub_index + 1}.\n\nNote: Already seen {len(listings)} existing listings in this search."
-                    self.send_message(chat_id, message)
-
-                # Update last_checked timestamp
+                self.send_message(chat_id, message)
                 self.database.update_last_checked(sub_id)
-
                 return True
 
             except Exception as e:
-                logger.error(f"[ERROR] Error fetching listings for /run: {e}")
-                return self.send_message(chat_id, f"❌ Error checking search: {str(e)[:100]}")
+                error_msg = str(e)
+                logger.error(f"[ERROR] Error fetching listings for /run: {error_msg}", exc_info=True)
+                # Show full error for debugging, split if too long
+                if len(error_msg) > 200:
+                    error_display = error_msg[:200] + "..."
+                else:
+                    error_display = error_msg
+                return self.send_message(chat_id, f"❌ Error checking search:\n<code>{error_display}</code>")
 
         except ValueError:
             message = "❌ <b>Error:</b> Search number must be a number\n\n<i>Example: /run 1</i>"
@@ -842,90 +783,33 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             # Send "processing" status
             self.send_message(chat_id, "⏳ Resetting search memory... (this may take a moment)")
 
-            # Create a fresh scraper instance for fetching listings
-            if not self.config:
-                logger.error("[ERROR] Configuration not available for /reset command")
-                return self.send_message(chat_id, "❌ Search functionality not available. Please try again later.")
-
+            # Clear all seen listings for this user's subscription
+            # (Don't need to scrape - just clear the database records)
             try:
-                # Import here to avoid circular imports
-                from scraper import MyAutoScraper
+                # Get all seen listings for this user
+                all_seen_listings = self.database.get_user_seen_listings(user_id)
 
-                # Create fresh scraper instance (avoid threading/greenlet issues)
-                scraper = MyAutoScraper(self.config)
+                if all_seen_listings:
+                    # Clear them all
+                    cleared_count = self.database.clear_subscription_seen_listings_for_ids(user_id, all_seen_listings)
 
-                search_config = {
-                    "base_url": search_url,
-                    "parameters": {}
-                }
-
-                # Run scraper in thread pool to avoid Playwright asyncio conflicts
-                # Playwright sync API doesn't work inside asyncio event loops,
-                # so we run it in a separate thread with its own event loop context
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    listings = executor.submit(scraper.fetch_search_results, search_config).result(timeout=30)
-
-                if not listings:
-                    message = f"<b>✅ Reset Complete</b>\n\nSearch #{sub_index + 1} has no listings to reset.\n\nNote: The 'memory' is now clear - you'll see all listings on next check."
-                    return self.send_message(chat_id, message)
-
-                # Extract listing IDs
-                listing_ids = [listing.get("listing_id") for listing in listings if listing.get("listing_id")]
-
-                # Clear seen listings for these IDs
-                cleared_count = self.database.clear_subscription_seen_listings_for_ids(user_id, listing_ids)
-
-                if cleared_count > 0:
                     message = f"""<b>✅ Reset Complete!</b>
 
 Search #{sub_index + 1} memory cleared!
 
 🗑️ Cleared {cleared_count} tracked listings
-📋 Total available: {len(listings)} listings
+
+On the next scheduler check, you'll receive notifications for all current listings.
 
 <code>{search_url[:60]}...</code>"""
 
-                    # Send confirmation first
                     self.send_message(chat_id, message)
-
-                    # Now show the cleared listings preview
-                    if len(listings) > 0:
-                        preview_message = f"<b>📋 Available Listings for /run {sub_index + 1}</b>\n\n"
-                        # Show first few listings as preview
-                        for idx, listing in enumerate(listings[:5], 1):
-                            title = listing.get('title', 'Unknown Vehicle')
-                            price = listing.get('price', 'N/A')
-                            mileage = listing.get('mileage_km', 'N/A')
-
-                            # Format mileage if numeric
-                            if isinstance(mileage, (int, float)):
-                                mileage_str = f"{mileage:,.0f} km"
-                            else:
-                                mileage_str = f"{mileage} km" if mileage != 'N/A' else "N/A"
-
-                            # Format price with ₾
-                            if isinstance(price, (int, float)):
-                                price_str = f"₾{price:,.0f}"
-                            else:
-                                price_str = f"₾{price}" if price != 'N/A' else "N/A"
-
-                            preview_message += f"{idx}. {title}\n   {price_str} | 🛣️ {mileage_str}\n\n"
-
-                        if len(listings) > 5:
-                            preview_message += f"... and {len(listings) - 5} more listings\n\nRun <code>/run {sub_index + 1}</code> to see all of them"
-                        else:
-                            preview_message += f"Run <code>/run {sub_index + 1}</code> to see complete details"
-
-                        return self.send_message(chat_id, preview_message)
-                    else:
-                        return True
+                    return True
 
                 else:
                     message = f"""<b>✅ Reset Complete!</b>
 
 Search #{sub_index + 1} already has no tracked listings.
-
-This search has {len(listings)} total listings available.
 
 <code>{search_url[:60]}...</code>"""
                     return self.send_message(chat_id, message)

@@ -124,7 +124,6 @@ class MyAutoScraper:
             seen_ids = set()
             seen_urls = set()  # Fallback deduplication using URLs
             pages_fetched = 0
-            pages_with_no_new_listings = 0
 
             for page_num in range(1, max_pages + 1):
                 try:
@@ -135,27 +134,16 @@ class MyAutoScraper:
 
                     response = self._make_request(base_url, params=params)
                     if not response:
-                        logger.warning(f"[WARN] Failed to fetch page {page_num}")
-                        pages_with_no_new_listings += 1
-                        if pages_with_no_new_listings >= 2:
-                            logger.info(f"[*] No response from 2 consecutive pages, stopping pagination")
-                            break
-                        continue
+                        logger.warning(f"[WARN] Failed to fetch page {page_num} - stopping pagination")
+                        break
 
                     # Parse search results for this page
                     page_listings = self._parse_search_results(response["html"], base_url)
                     pages_fetched += 1
 
                     if not page_listings:
-                        logger.info(f"[*] Page {page_num} returned no listings")
-                        pages_with_no_new_listings += 1
-                        if pages_with_no_new_listings >= 2:
-                            logger.info(f"[*] 2 consecutive pages with no listings, stopping pagination")
-                            break
-                        continue
-
-                    # Reset the no-new-listings counter since we got listings
-                    pages_with_no_new_listings = 0
+                        logger.info(f"[*] Page {page_num} returned no listings - stopping pagination")
+                        break
 
                     # Add new listings (avoiding duplicates)
                     new_count = 0
@@ -198,10 +186,8 @@ class MyAutoScraper:
 
                 except Exception as e:
                     logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
-                    pages_with_no_new_listings += 1
-                    if pages_with_no_new_listings >= 2:
-                        break
-                    continue
+                    # Stop pagination on error
+                    break
 
             logger.info(f"[OK] Fetched {pages_fetched} pages with a total of {len(all_listings)} unique listings")
 

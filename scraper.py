@@ -79,39 +79,95 @@ class MyAutoScraper:
         self.max_retries = self.config.get("max_retries", 5)
         self.retry_delay = self.config.get("retry_delay_seconds", 5)
 
-    def fetch_search_results(self, search_config: Dict[str, Any]) -> List[Dict]:
+    def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 10) -> List[Dict]:
         """
-        Fetch search results from MyAuto.ge
+        Fetch search results from MyAuto.ge across multiple pages
+        Fetches up to max_pages to get comprehensive listing coverage
 
         Args:
             search_config: Search configuration with URL and parameters
+            max_pages: Maximum number of pages to fetch (default 10)
 
         Returns:
-            List of listing summaries
+            List of listing summaries from all pages
         """
 
         try:
-            url = search_config.get("base_url")
-            if not url:
+            base_url = search_config.get("base_url")
+            if not base_url:
                 logger.error("[ERROR] No base_url in search config")
                 return []
 
-            # Add parameters as query string
-            params = search_config.get("parameters", {})
+            # Get parameters as query string
+            params = search_config.get("parameters", {}).copy()
 
             logger.info(f"[*] Fetching search results: {search_config.get('name')}")
-            logger.debug(f"    URL: {url}")
+            logger.debug(f"    Base URL: {base_url}")
+            logger.info(f"[*] Will fetch up to {max_pages} pages")
 
-            response = self._make_request(url, params=params)
-            if not response:
-                return []
+            all_listings = []
+            seen_ids = set()
+            pages_fetched = 0
+            pages_with_no_new_listings = 0
 
-            # Parse search results
-            listings = self._parse_search_results(response["html"], url)
+            for page_num in range(1, max_pages + 1):
+                try:
+                    logger.info(f"[*] Fetching page {page_num}...")
 
-            logger.info(f"[OK] Found {len(listings)} listings in search results")
+                    # Add page parameter for MyAuto.ge pagination
+                    params["page"] = page_num
 
-            return listings
+                    response = self._make_request(base_url, params=params)
+                    if not response:
+                        logger.warning(f"[WARN] Failed to fetch page {page_num}")
+                        pages_with_no_new_listings += 1
+                        if pages_with_no_new_listings >= 2:
+                            logger.info(f"[*] No response from 2 consecutive pages, stopping pagination")
+                            break
+                        continue
+
+                    # Parse search results for this page
+                    page_listings = self._parse_search_results(response["html"], base_url)
+                    pages_fetched += 1
+
+                    if not page_listings:
+                        logger.info(f"[*] Page {page_num} returned no listings")
+                        pages_with_no_new_listings += 1
+                        if pages_with_no_new_listings >= 2:
+                            logger.info(f"[*] 2 consecutive pages with no listings, stopping pagination")
+                            break
+                        continue
+
+                    # Reset the no-new-listings counter since we got listings
+                    pages_with_no_new_listings = 0
+
+                    # Add new listings (avoiding duplicates)
+                    new_count = 0
+                    for listing in page_listings:
+                        listing_id = listing.get("listing_id")
+                        if listing_id and listing_id not in seen_ids:
+                            all_listings.append(listing)
+                            seen_ids.add(listing_id)
+                            new_count += 1
+
+                    logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
+
+                    # If we got fewer than expected listings on this page, likely no more pages
+                    # MyAuto.ge typically shows 30 listings per page
+                    if len(page_listings) < 20:
+                        logger.info(f"[*] Page {page_num} has fewer than expected listings, likely last page")
+                        break
+
+                except Exception as e:
+                    logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
+                    pages_with_no_new_listings += 1
+                    if pages_with_no_new_listings >= 2:
+                        break
+                    continue
+
+            logger.info(f"[OK] Fetched {pages_fetched} pages with a total of {len(all_listings)} unique listings")
+
+            return all_listings
 
         except Exception as e:
             logger.error(f"[ERROR] Error fetching search results: {e}")

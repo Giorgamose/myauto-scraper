@@ -673,11 +673,28 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 # Run scraper in thread pool to avoid Playwright asyncio conflicts
                 # Playwright sync API doesn't work inside asyncio event loops,
                 # so we run it in a separate thread with its own event loop context
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    listings = executor.submit(scraper.fetch_search_results, search_config).result(timeout=30)
+                listings = []
+                max_retries = 2
+                retry_delay = 3  # seconds
+
+                for attempt in range(max_retries):
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        listings = executor.submit(scraper.fetch_search_results, search_config).result(timeout=30)
+
+                    if listings:
+                        # Got results, exit retry loop
+                        logger.info(f"[OK] Fetched {len(listings)} listings on attempt {attempt + 1}")
+                        break
+                    elif attempt < max_retries - 1:
+                        # No results and we have retries left
+                        logger.info(f"[*] No listings found on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        # Last attempt, still no results
+                        logger.warning(f"[WARN] No listings found after {max_retries} attempts")
 
                 if not listings:
-                    message = f"<b>✅ Check Complete</b>\n\nNo new listings found for search #{sub_index + 1}.\n\n<code>{search_url[:60]}...</code>"
+                    message = f"<b>✅ Check Complete</b>\n\nNo listings found for search #{sub_index + 1}.\n\nThe search may be empty or MyAuto.ge may be rate limiting. Please try again in a moment.\n\n<code>{search_url[:60]}...</code>"
                     return self.send_message(chat_id, message)
 
                 # Filter for new listings (not seen before)
@@ -695,32 +712,14 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 if new_listings:
                     logger.info(f"[+] Found {len(new_listings)} new listings for subscription {sub_id}")
 
-                    # Enrich listings with detailed information
-                    enriched_listings = []
-                    for listing in new_listings:
-                        listing_id = listing.get("listing_id")
-                        if listing_id:
-                            try:
-                                # Fetch detailed information for this listing
-                                detailed = scraper.fetch_listing_details(listing_id)
-                                if detailed:
-                                    # Merge detailed info with summary
-                                    listing.update(detailed)
-                                    enriched_listings.append(listing)
-                                else:
-                                    # Use summary if details fetch fails
-                                    enriched_listings.append(listing)
-                            except Exception as e:
-                                logger.debug(f"[WARN] Could not fetch details for listing {listing_id}: {e}")
-                                enriched_listings.append(listing)
-                        else:
-                            enriched_listings.append(listing)
-
-                    # Format and send results with enriched data
-                    if len(enriched_listings) == 1:
-                        message = self._format_single_listing_for_run(enriched_listings[0], sub_index + 1)
+                    # Format and send results
+                    # Note: We don't fetch detailed information here because /run executes in the message handler thread
+                    # and Playwright browser instance can't be used across threads. The scheduler (which has its own
+                    # thread) will fetch detailed information when sending notifications.
+                    if len(new_listings) == 1:
+                        message = self._format_single_listing_for_run(new_listings[0], sub_index + 1)
                     else:
-                        message = self._format_multiple_listings_for_run(enriched_listings, sub_index + 1)
+                        message = self._format_multiple_listings_for_run(new_listings, sub_index + 1)
 
                     self.send_message(chat_id, message)
 
@@ -838,11 +837,45 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 Search #{sub_index + 1} memory cleared!
 
 🗑️ Cleared {cleared_count} tracked listings
-
-Next time you use /run {sub_index + 1}, you'll see all {len(listings)} listings as "new"
+📋 Total available: {len(listings)} listings
 
 <code>{search_url[:60]}...</code>"""
-                    return self.send_message(chat_id, message)
+
+                    # Send confirmation first
+                    self.send_message(chat_id, message)
+
+                    # Now show the cleared listings preview
+                    if len(listings) > 0:
+                        preview_message = f"<b>📋 Available Listings for /run {sub_index + 1}</b>\n\n"
+                        # Show first few listings as preview
+                        for idx, listing in enumerate(listings[:5], 1):
+                            title = listing.get('title', 'Unknown Vehicle')
+                            price = listing.get('price', 'N/A')
+                            mileage = listing.get('mileage_km', 'N/A')
+
+                            # Format mileage if numeric
+                            if isinstance(mileage, (int, float)):
+                                mileage_str = f"{mileage:,.0f} km"
+                            else:
+                                mileage_str = f"{mileage} km" if mileage != 'N/A' else "N/A"
+
+                            # Format price with ₾
+                            if isinstance(price, (int, float)):
+                                price_str = f"₾{price:,.0f}"
+                            else:
+                                price_str = f"₾{price}" if price != 'N/A' else "N/A"
+
+                            preview_message += f"{idx}. {title}\n   {price_str} | 🛣️ {mileage_str}\n\n"
+
+                        if len(listings) > 5:
+                            preview_message += f"... and {len(listings) - 5} more listings\n\nRun <code>/run {sub_index + 1}</code> to see all of them"
+                        else:
+                            preview_message += f"Run <code>/run {sub_index + 1}</code> to see complete details"
+
+                        return self.send_message(chat_id, preview_message)
+                    else:
+                        return True
+
                 else:
                     message = f"""<b>✅ Reset Complete!</b>
 

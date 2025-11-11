@@ -474,10 +474,6 @@ class CarListingMonitor:
                     notifications_sent = self.send_listing_notifications(new_listings)
                     self.stats["notifications_sent"] += notifications_sent
 
-            # Send status update if no new listings
-            if self.stats["new_listings_found"] == 0:
-                self.send_status_notification()
-
             # Cleanup old data
             self.cleanup_old_data()
 

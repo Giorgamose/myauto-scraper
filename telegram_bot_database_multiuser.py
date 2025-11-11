@@ -488,19 +488,48 @@ class TelegramBotDatabaseMultiUser:
             List of subscription dictionaries with user info
         """
         try:
+            # Query with proper join to telegram_users table (not users)
             response = self.db._make_request(
                 'GET',
-                f"{self.db.base_url}/telegram_user_subscriptions?is_active=eq.true&select=*,users(id,username,telegram_chat_id,check_interval_minutes)",
+                f"{self.db.base_url}/telegram_user_subscriptions?is_active=eq.true&select=*,telegram_users(id,telegram_chat_id)",
                 headers=self.db.headers,
                 timeout=10
             )
 
-            if response.status_code == 200:
-                return response.json()
-            return []
+            if response.status_code != 200:
+                logger.error(f"[ERROR] Failed to fetch subscriptions: HTTP {response.status_code} - {response.text}")
+                return []
+
+            subscriptions = response.json()
+
+            # Log what we got
+            logger.debug(f"[*] Retrieved {len(subscriptions)} active subscriptions")
+
+            # Flatten the response to include chat_id from nested telegram_users object
+            flattened = []
+            for sub in subscriptions:
+                # Make a copy to avoid modifying original
+                flattened_sub = dict(sub)
+
+                # Extract chat_id from nested telegram_users object
+                if isinstance(sub.get('telegram_users'), dict):
+                    user_data = sub['telegram_users']
+                    flattened_sub['chat_id'] = user_data.get('telegram_chat_id')
+                    logger.debug(f"[*] Subscription {sub.get('id')}: found chat_id={flattened_sub.get('chat_id')}")
+                else:
+                    # Fallback if chat_id is already at top level (shouldn't happen with new schema)
+                    if 'chat_id' not in flattened_sub:
+                        logger.warning(f"[WARN] Subscription {sub.get('id')}: no telegram_chat_id found in user data")
+
+                flattened.append(flattened_sub)
+
+            logger.info(f"[*] Processing {len(flattened)} subscriptions for check cycle")
+            return flattened
 
         except Exception as e:
             logger.error(f"[ERROR] Failed to get all subscriptions: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return []
 
     def update_subscription_check_time(self, subscription_id: str) -> bool:

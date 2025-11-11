@@ -128,7 +128,8 @@ class TelegramBotScheduler(threading.Thread):
             subscriptions = self.database.get_all_active_subscriptions()
 
             if not subscriptions:
-                logger.info("[*] No active subscriptions to check")
+                logger.warning("[*] No active subscriptions to check - verify database connection and subscription data")
+                logger.debug("[DEBUG] Database method returned empty list - check if subscriptions exist and are marked as active=true")
                 self.stats["last_check_time"] = datetime.now()
                 return
 
@@ -192,7 +193,12 @@ class TelegramBotScheduler(threading.Thread):
         chat_id = subscription.get("chat_id")  # Keep for notifications
         search_url = subscription.get("search_url")
 
-        logger.debug(f"[*] Checking subscription {subscription_id}: {search_url[:60]}")
+        # Validate we have essential fields
+        if not chat_id:
+            logger.warning(f"[WARN] Subscription {subscription_id}: Missing chat_id - cannot send notifications")
+            logger.debug(f"[DEBUG] Subscription data: {subscription}")
+
+        logger.debug(f"[*] Checking subscription {subscription_id}: {search_url[:60] if search_url else 'N/A'}")
 
         # Fetch listings from MyAuto
         try:

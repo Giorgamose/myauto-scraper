@@ -56,6 +56,67 @@ class TelegramBotDatabaseMultiUser:
 
         logger.info("[OK] Telegram Bot Database initialized (Multi-User)")
 
+    # ========== USER MANAGEMENT ==========
+
+    def get_or_create_telegram_user(self, chat_id: int, username: str = None) -> Optional[str]:
+        """
+        Get or create a Telegram user by chat_id
+
+        Args:
+            chat_id: Telegram chat ID
+            username: Optional Telegram username
+
+        Returns:
+            User ID (UUID) if successful, None otherwise
+        """
+        try:
+            # Try to get existing user
+            response = self.db._make_request(
+                'GET',
+                f"{self.db.base_url}/telegram_users?telegram_chat_id=eq.{chat_id}",
+                headers=self.db.headers,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                users = response.json()
+                if users:
+                    # User exists, return the ID
+                    user_id = users[0].get("id")
+                    logger.debug(f"[*] Found existing user {user_id} for chat {chat_id}")
+                    return user_id
+
+            # User doesn't exist, create new user
+            import uuid
+            new_user_id = str(uuid.uuid4())
+
+            user_data = {
+                "id": new_user_id,
+                "telegram_chat_id": chat_id,
+                "telegram_username": username,
+                "created_at": datetime.now().isoformat(),
+                "is_active": True
+            }
+
+            response = self.db._make_request(
+                'POST',
+                f"{self.db.base_url}/telegram_users",
+                json=user_data,
+                headers=self.db.headers,
+                timeout=10
+            )
+
+            if response.status_code in [200, 201]:
+                logger.info(f"[+] Created new Telegram user {new_user_id} for chat {chat_id}")
+                return new_user_id
+            else:
+                logger.error(f"[ERROR] Failed to create user: {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to get or create user: {e}")
+            return None
+
     # ========== SUBSCRIPTION MANAGEMENT ==========
 
     def add_subscription(
@@ -524,6 +585,67 @@ class TelegramBotDatabaseMultiUser:
         except Exception as e:
             logger.error(f"[ERROR] Failed to count subscriptions: {e}")
             return 0
+
+    def mark_listing_seen(self, user_id: str, listing_id: str) -> bool:
+        """
+        Mark a listing as seen by a user (alias for record_user_seen_listing)
+
+        Args:
+            user_id: User ID
+            listing_id: MyAuto listing ID
+
+        Returns:
+            True if marked, False otherwise
+        """
+        return self.record_user_seen_listing(user_id, listing_id)
+
+    def clear_subscription_seen_listings_for_ids(self, user_id: str, listing_ids: List[str]) -> int:
+        """
+        Clear seen listings for specific listing IDs
+
+        Args:
+            user_id: User ID
+            listing_ids: List of listing IDs to clear
+
+        Returns:
+            Number of listings cleared
+        """
+        try:
+            cleared_count = 0
+
+            for listing_id in listing_ids:
+                try:
+                    response = self.db._make_request(
+                        'DELETE',
+                        f"{self.db.base_url}/user_seen_listings?user_id=eq.{user_id}&listing_id=eq.{listing_id}",
+                        headers=self.db.headers,
+                        timeout=10
+                    )
+
+                    if response.status_code in [200, 204]:
+                        cleared_count += 1
+
+                except Exception as e:
+                    logger.debug(f"[WARN] Failed to clear listing {listing_id}: {e}")
+                    continue
+
+            return cleared_count
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to clear listings: {e}")
+            return 0
+
+    def update_last_checked(self, subscription_id: str) -> bool:
+        """
+        Update the last_checked timestamp for a subscription (alias for update_subscription_check_time)
+
+        Args:
+            subscription_id: Subscription ID
+
+        Returns:
+            True if updated, False otherwise
+        """
+        return self.update_subscription_check_time(subscription_id)
 
 
 # ============================================================================

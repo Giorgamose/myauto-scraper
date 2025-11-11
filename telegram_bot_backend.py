@@ -344,7 +344,14 @@ The URL must be from MyAuto.ge. Examples:
             logger.error("[ERROR] Database not available")
             return self.send_message(chat_id, "❌ Database error. Please try again later.")
 
-        success = self.database.add_subscription(chat_id, url)
+        # Get or create user for this chat_id
+        user_id = self.database.get_or_create_telegram_user(chat_id)
+        if not user_id:
+            logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+            return self.send_message(chat_id, "❌ Failed to create user. Please try again later.")
+
+        # Add subscription for this user
+        success, error_msg = self.database.add_subscription(user_id, url)
 
         if success:
             message = f"""✅ <b>Search criteria saved!</b>
@@ -356,11 +363,19 @@ I'll check this search periodically and notify you when new listings appear. �
 Use /list to see all your saved searches."""
             return self.send_message(chat_id, message)
         else:
-            message = f"""⚠️ <b>Already monitoring</b>
+            # Determine if it's a duplicate or real error
+            if "already exists" in (error_msg or "").lower():
+                message = f"""⚠️ <b>Already monitoring</b>
 
 This URL is already in your saved searches.
 
 Use /list to see all your searches."""
+            else:
+                message = f"""❌ <b>Error adding search</b>
+
+{error_msg or 'Please try again later.'}
+
+Use /list to see your current searches."""
             return self.send_message(chat_id, message)
 
     def _handle_list(self, chat_id: int) -> bool:
@@ -377,7 +392,13 @@ Use /list to see all your searches."""
             logger.error("[ERROR] Database not available")
             return self.send_message(chat_id, "❌ Database error. Please try again later.")
 
-        subscriptions = self.database.get_subscriptions(chat_id)
+        # Get or create user for this chat_id
+        user_id = self.database.get_or_create_telegram_user(chat_id)
+        if not user_id:
+            logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+            return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
+
+        subscriptions = self.database.get_subscriptions(user_id)
 
         if not subscriptions:
             message = """📋 <b>Your saved searches:</b>
@@ -427,8 +448,14 @@ You haven't saved any searches yet.
             logger.error("[ERROR] Database not available")
             return self.send_message(chat_id, "❌ Database error. Please try again later.")
 
+        # Get or create user for this chat_id
+        user_id = self.database.get_or_create_telegram_user(chat_id)
+        if not user_id:
+            logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+            return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
+
         # Get current count before clearing
-        subscriptions = self.database.get_subscriptions(chat_id)
+        subscriptions = self.database.get_subscriptions(user_id)
         count = len(subscriptions)
 
         if count == 0:
@@ -436,12 +463,12 @@ You haven't saved any searches yet.
             return self.send_message(chat_id, message)
 
         # Clear subscriptions
-        deleted = self.database.clear_subscriptions(chat_id)
+        success, error_msg = self.database.clear_subscriptions(user_id)
 
-        if deleted > 0:
+        if success:
             message = f"""✅ <b>All searches cleared!</b>
 
-Removed {deleted} search(es) from monitoring.
+Removed {count} search(es) from monitoring.
 
 To add new searches:
 /set &lt;MyAuto.ge URL&gt;"""
@@ -465,8 +492,14 @@ To add new searches:
             return self.send_message(chat_id, "❌ Database error. Please try again later.")
 
         try:
+            # Get or create user for this chat_id
+            user_id = self.database.get_or_create_telegram_user(chat_id)
+            if not user_id:
+                logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+                return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
+
             stats = self.database.get_statistics()
-            user_subs = self.database.get_subscriptions(chat_id)
+            user_subs = self.database.get_subscriptions(user_id)
 
             message = f"""<b>📊 Bot Statistics</b>
 
@@ -508,6 +541,12 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             return self.send_message(chat_id, message)
 
         try:
+            # Get or create user for this chat_id
+            user_id = self.database.get_or_create_telegram_user(chat_id)
+            if not user_id:
+                logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+                return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
+
             # Convert sub_number to integer (1-based index)
             sub_index = int(sub_number) - 1
 
@@ -515,8 +554,8 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 message = "❌ <b>Error:</b> Search number must be 1 or higher"
                 return self.send_message(chat_id, message)
 
-            # Get subscriptions for this chat
-            subscriptions = self.database.get_subscriptions(chat_id)
+            # Get subscriptions for this user
+            subscriptions = self.database.get_subscriptions(user_id)
 
             if not subscriptions:
                 message = "📋 You don't have any saved searches.\n\nUse /set to add a search."
@@ -570,10 +609,10 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 for listing in listings:
                     listing_id = listing.get("listing_id")
 
-                    if listing_id and not self.database.has_user_seen_listing(chat_id, listing_id):
+                    if listing_id and not self.database.has_user_seen_listing(user_id, listing_id):
                         new_listings.append(listing)
                         # Mark as seen
-                        self.database.mark_listing_seen(chat_id, listing_id)
+                        self.database.mark_listing_seen(user_id, listing_id)
                         logger.debug(f"[*] New listing marked: {listing_id}")
 
                 if new_listings:
@@ -628,6 +667,12 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             return self.send_message(chat_id, message)
 
         try:
+            # Get or create user for this chat_id
+            user_id = self.database.get_or_create_telegram_user(chat_id)
+            if not user_id:
+                logger.error(f"[ERROR] Failed to get or create user for chat {chat_id}")
+                return self.send_message(chat_id, "❌ Failed to retrieve user. Please try again later.")
+
             # Convert sub_number to integer (1-based index)
             sub_index = int(sub_number) - 1
 
@@ -635,8 +680,8 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 message = "❌ <b>Error:</b> Search number must be 1 or higher"
                 return self.send_message(chat_id, message)
 
-            # Get subscriptions for this chat
-            subscriptions = self.database.get_subscriptions(chat_id)
+            # Get subscriptions for this user
+            subscriptions = self.database.get_subscriptions(user_id)
 
             if not subscriptions:
                 message = "📋 You don't have any saved searches.\n\nUse /set to add a search."
@@ -687,7 +732,7 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                 listing_ids = [listing.get("listing_id") for listing in listings if listing.get("listing_id")]
 
                 # Clear seen listings for these IDs
-                cleared_count = self.database.clear_subscription_seen_listings_for_ids(chat_id, listing_ids)
+                cleared_count = self.database.clear_subscription_seen_listings_for_ids(user_id, listing_ids)
 
                 if cleared_count > 0:
                     message = f"""<b>✅ Reset Complete!</b>

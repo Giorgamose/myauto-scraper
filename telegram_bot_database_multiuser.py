@@ -139,14 +139,9 @@ class TelegramBotDatabaseMultiUser:
             Tuple of (success, error_message)
         """
         try:
-            # Check if user exists
-            user = self.user_manager.get_user_by_id(user_id) if self.user_manager else None
-            if not user:
-                return False, "User not found"
-
-            # Check user's subscription limit
-            max_subs = user.get("max_subscriptions", 50)
+            # Count current subscriptions
             current_subs = self._count_active_subscriptions(user_id)
+            max_subs = 50  # Default limit for subscriptions per user
             if current_subs >= max_subs:
                 return False, f"Subscription limit reached ({max_subs})"
 

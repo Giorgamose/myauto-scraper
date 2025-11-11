@@ -11,7 +11,7 @@ import random
 from typing import List, Dict, Optional, Any
 from bs4 import BeautifulSoup
 from parser import MyAutoParser
-from urllib.parse import urljoin, quote, urlencode
+from urllib.parse import urljoin, quote, urlencode, urlparse, parse_qs
 
 try:
     from playwright.sync_api import sync_playwright, Page
@@ -100,6 +100,21 @@ class MyAutoScraper:
 
             # Get parameters as query string
             params = search_config.get("parameters", {}).copy()
+
+            # Remove page parameter from base_url if it exists
+            # (will be added fresh for each page)
+            parsed = urlparse(base_url)
+            if parsed.query:
+                # Extract existing query parameters from base_url
+                query_params = parse_qs(parsed.query, keep_blank_values=True)
+                # Flatten the query params (parse_qs returns lists)
+                for key, values in query_params.items():
+                    if key != "page":  # Skip page param, we'll set it ourselves
+                        params[key] = values[0] if values else ""
+
+                # Reconstruct base_url without query string
+                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                logger.debug(f"[*] Extracted params from URL, cleaned base_url: {base_url}")
 
             logger.info(f"[*] Fetching search results: {search_config.get('name')}")
             logger.debug(f"    Base URL: {base_url}")
@@ -308,9 +323,17 @@ class MyAutoScraper:
                 time.sleep(jitter)
 
                 # Build full URL with parameters
+                # Handle URLs that already have query parameters
                 full_url = url
                 if params:
-                    full_url = f"{url}?{urlencode(params)}"
+                    param_string = urlencode(params)
+                    # Check if URL already has query parameters
+                    if "?" in url:
+                        # Append with & if URL already has parameters
+                        full_url = f"{url}&{param_string}"
+                    else:
+                        # Append with ? if URL has no parameters yet
+                        full_url = f"{url}?{param_string}"
 
                 logger.info(f"[*] Request attempt {attempt + 1}/{max_retries}")
                 logger.debug(f"    URL: {full_url}")

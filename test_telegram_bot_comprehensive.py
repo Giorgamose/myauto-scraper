@@ -751,6 +751,69 @@ class ComprehensiveBotTestSuite:
             self.test("Special characters", False, f"Exception: {e}")
             return False
 
+    def test_16_clear_command_by_number(self) -> bool:
+        """TEST 16: /clear command with subscription numbers"""
+        self.print_section("TEST 16: /CLEAR COMMAND - REMOVE BY NUMBER")
+        try:
+            if not self.user_id:
+                self.test("/clear by number", False, "No user ID")
+                return False
+
+            # Get current subscriptions
+            subs_before = self.database.get_subscriptions(self.user_id)
+            if not subs_before or len(subs_before) < 1:
+                self.test("/clear by number", False, "No subscriptions to test")
+                return False
+
+            count_before = len(subs_before)
+
+            # Remove first subscription by ID (simulating /clear 1)
+            first_sub_id = subs_before[0].get('id')
+            if not first_sub_id:
+                self.test("/clear - Get first sub ID", False, "No ID in subscription")
+                return False
+
+            self.test("/clear - Get first sub ID", True, f"ID: {first_sub_id[:8]}...")
+
+            # Test deletion using delete_subscription (what /clear command uses)
+            success, error_msg = self.database.delete_subscription(self.user_id, first_sub_id)
+
+            self.test("/clear by number - Delete success", success,
+                     f"Success: {success}, Error: {error_msg}")
+
+            # Verify count decreased
+            subs_after = self.database.get_subscriptions(self.user_id)
+            count_after = len(subs_after) if subs_after else 0
+
+            self.test("/clear by number - Count decreased", count_after == count_before - 1,
+                     f"Before: {count_before}, After: {count_after}")
+
+            # Verify first sub is gone
+            remaining_ids = [s['id'] for s in subs_after] if subs_after else []
+            not_found = first_sub_id not in remaining_ids
+
+            self.test("/clear by number - Not in list", not_found,
+                     f"Removed: {first_sub_id[:8]}..., Remaining: {len(remaining_ids)}")
+
+            # Test /clear all scenario
+            if count_after > 0:
+                success_all, error_all = self.database.clear_subscriptions(self.user_id)
+                self.test("/clear all - Clear all remaining", success_all,
+                         f"Cleared {count_after} subscriptions")
+
+                subs_final = self.database.get_subscriptions(self.user_id)
+                count_final = len(subs_final) if subs_final else 0
+                self.test("/clear all - Count is zero", count_final == 0,
+                         f"Final count: {count_final}")
+
+                return success and not_found and success_all and count_final == 0
+            else:
+                return success and not_found
+
+        except Exception as e:
+            self.test("/clear by number", False, f"Exception: {e}")
+            return False
+
     # ==================== REPORT GENERATION ====================
 
     def generate_report(self):
@@ -852,6 +915,7 @@ class ComprehensiveBotTestSuite:
             self.test_13_remove_and_verify(),
             self.test_14_error_handling_comprehensive(),
             self.test_15_special_characters_in_data(),
+            self.test_16_clear_command_by_number(),
         ]
 
         # Generate report

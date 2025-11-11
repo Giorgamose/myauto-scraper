@@ -1,31 +1,43 @@
 TELEGRAM BOT TEST REPORT
 ======================================================================
-Timestamp: 2025-11-11 12:48:27.212761
-Duration: 13.85s
+Timestamp: 2025-11-11 13:50:40.370241
+Duration: 6.36s
 
 Summary:
-  Total:  9
-  Passed: 2
-  Failed: 7
-  Success: 22.2%
+  Total:  15
+  Passed: 7
+  Failed: 8
+  Success: 46.7%
 
 Details:
 ----------------------------------------------------------------------
-1. [FAIL] User creation/retrieval
-   Failed to create user
-2. [FAIL] /set command
-   User ID not available
-3. [FAIL] /list command
-   User ID not available
-4. [FAIL] /reset command
+1. [PASS] User creation/retrieval
+   User ID: e42a0b05...
+2. [PASS] User has subscriptions list
+   Subscriptions: 3
+3. [FAIL] Add first subscription
+   Subscription ID: Subscrip...
+4. [FAIL] Add second subscription
+   Subscription ID: Subscrip...
+5. [PASS] Retrieve subscriptions
+   Found 3 subscriptions
+6. [FAIL] First subscription has required fields
+   Fields: ['id', 'telegram_user_id', 'search_url', 'search_name', 'search_criteria_id', 'created_at', 'last_checked', 'is_active', 'chat_id']
+7. [PASS] First subscription is active
+   Active: True
+8. [FAIL] Second subscription has required fields
+   Fields: ['id', 'telegram_user_id', 'search_url', 'search_name', 'search_criteria_id', 'created_at', 'last_checked', 'is_active', 'chat_id']
+9. [FAIL] /reset command
    No subscriptions to reset
-5. [FAIL] /clear command
+10. [FAIL] /clear command
    Not enough subscriptions to test
-6. [FAIL] /run command
+11. [FAIL] /run command
    No subscriptions to test
-7. [FAIL] Data persistence
-   User ID not available
-8. [PASS] Handle invalid user ID gracefully
+12. [PASS] Subscriptions persist across calls
+   Found 3 subscriptions
+13. [FAIL] Subscription details are correct
+   URL: https://www.myauto.ge/ka/s/iyideba-manqa...
+14. [PASS] Handle invalid user ID gracefully
    Result type: <class 'list'>
-9. [PASS] Handle empty URL
+15. [PASS] Handle empty URL
    Empty URL rejected or warning issued

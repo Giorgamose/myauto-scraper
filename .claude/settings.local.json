@@ -10,7 +10,8 @@
       "Bash(python test_telegram_bot.py:*)",
       "Bash(timeout 300 python:*)",
       "Bash(python:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(timeout 180 python:*)"
     ],
     "deny": [],
     "ask": []

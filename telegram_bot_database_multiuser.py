@@ -246,7 +246,7 @@ class TelegramBotDatabaseMultiUser:
         try:
             # Verify ownership
             sub = self._get_subscription_by_id(subscription_id)
-            if not sub or sub.get("user_id") != user_id:
+            if not sub or sub.get("telegram_user_id") != user_id:
                 return False, "Subscription not found or unauthorized"
 
             if soft_delete:

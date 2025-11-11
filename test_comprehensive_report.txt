@@ -1,13 +1,13 @@
 COMPREHENSIVE TELEGRAM BOT TEST REPORT
 ======================================================================
-Timestamp: 2025-11-11 13:45:28.249017
-Duration: 121.14s
+Timestamp: 2025-11-11 13:56:48.318039
+Duration: 127.32s
 
 Summary:
-  Total:  50
-  Passed: 40
+  Total:  56
+  Passed: 46
   Failed: 10
-  Success: 80.0%
+  Success: 82.1%
 
 Test Groups:
   Basic Operations:      3 tests
@@ -37,7 +37,7 @@ Details:
  8. [PASS] Batch boundary - Should be 1 batch
      Batches: 1
  9. [PASS] Batch boundary - Message fits in 4096
-     Size: 2789 chars
+     Size: 2818 chars
 10. [PASS] Batch split - Have 11 listings
      Count: 11
 11. [PASS] Batch split - Should be 2 batches
@@ -47,9 +47,9 @@ Details:
 13. [PASS] Batch split - Second batch size
      Size: 1
 14. [PASS] Batch split - Batch 1 message size
-     Size: 2811 chars
+     Size: 2840 chars
 15. [PASS] Batch split - Batch 2 message size
-     Size: 333 chars
+     Size: 301 chars
 16. [PASS] 20 listings - Have 20 listings
      Count: 20
 17. [PASS] 20 listings - Should be 2 batches
@@ -91,11 +91,11 @@ Details:
 35. [PASS] Price format - Real example (Toyota) (59500)
      Expected: ₾59,500, Found: True
 36. [PASS] Message size - Batch 1
-     Size: 2811/4096 chars (68.6%)
+     Size: 2772/4096 chars (67.7%)
 37. [PASS] Message size - Batch 2
-     Size: 2748/4096 chars (67.1%)
+     Size: 2783/4096 chars (67.9%)
 38. [PASS] Message size - Batch 3
-     Size: 2681/4096 chars (65.5%)
+     Size: 2655/4096 chars (64.8%)
 39. [PASS] List subscriptions - Retrieve
      Count: 5
 40. [FAIL] List subscriptions - Sub 1 fields
@@ -120,3 +120,15 @@ Details:
      Handled long URL
 50. [FAIL] Special characters - Add with special chars
      Name: Search #1 (BMW 3-Series) - €Test
+51. [PASS] /clear - Get first sub ID
+     ID: 5f24c036...
+52. [PASS] /clear by number - Delete success
+     Success: True, Error: None
+53. [PASS] /clear by number - Count decreased
+     Before: 5, After: 4
+54. [PASS] /clear by number - Not in list
+     Removed: 5f24c036..., Remaining: 4
+55. [PASS] /clear all - Clear all remaining
+     Cleared 4 subscriptions
+56. [PASS] /clear all - Count is zero
+     Final count: 0

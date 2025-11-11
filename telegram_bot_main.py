@@ -144,7 +144,7 @@ class TelegramBotApplication:
             self.scheduler = TelegramBotScheduler(
                 database=self.database,
                 bot_backend=self.bot_backend,
-                scraper=self.scraper,
+                config=self.config,  # Pass config so scheduler creates its own scraper in its thread
                 notifications_manager=self.notifier,
                 check_interval_minutes=check_interval,
                 daemon=False  # Not a daemon so we can control shutdown

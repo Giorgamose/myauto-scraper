@@ -718,10 +718,37 @@ Last update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
                     # thread) will fetch detailed information when sending notifications.
                     if len(new_listings) == 1:
                         message = self._format_single_listing_for_run(new_listings[0], sub_index + 1)
+                        self.send_message(chat_id, message)
                     else:
-                        message = self._format_multiple_listings_for_run(new_listings, sub_index + 1)
+                        # For multiple listings, split into batches and send each one
+                        from notifications_telegram import TelegramNotificationManager
+                        batches = TelegramNotificationManager._split_listings_into_batches(new_listings, max_listings_per_batch=10)
 
-                    self.send_message(chat_id, message)
+                        for batch_num, batch in enumerate(batches, 1):
+                            # Format batch with batch info if multiple batches
+                            if len(batches) > 1:
+                                message = TelegramNotificationManager._format_multiple_listings(
+                                    batch,
+                                    batch_num=batch_num,
+                                    total_batches=len(batches),
+                                    total_listings=len(new_listings)
+                                )
+                            else:
+                                message = TelegramNotificationManager._format_multiple_listings(batch)
+
+                            # Add search context
+                            message = f"<b>Search #{sub_index + 1}</b>\n\n" + message
+
+                            success = self.send_message(chat_id, message)
+
+                            if success:
+                                logger.info(f"[OK] Batch {batch_num}/{len(batches)} sent to chat {chat_id}")
+                            else:
+                                logger.warning(f"[WARN] Failed to send batch {batch_num}/{len(batches)} to chat {chat_id}")
+
+                            # Add delay between batches to prevent rate limiting
+                            if batch_num < len(batches):
+                                time.sleep(1)
 
                 else:
                     message = f"<b>✅ Check Complete</b>\n\nNo <b>new</b> listings found for search #{sub_index + 1}.\n\nNote: Already seen {len(listings)} existing listings in this search."

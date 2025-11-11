@@ -270,12 +270,13 @@ class TelegramBotScheduler(threading.Thread):
         """
         Enrich basic listing summaries with detailed information
         Fetches full details for each listing to include fuel type, transmission, etc.
+        Properly flattens nested detailed data structure for formatter compatibility.
 
         Args:
             listings: List of basic listing summaries
 
         Returns:
-            List of enriched listing dictionaries
+            List of enriched listing dictionaries with flat structure
         """
         enriched = []
 
@@ -287,8 +288,10 @@ class TelegramBotScheduler(threading.Thread):
                     # Fetch detailed information for this listing
                     detailed = self.scraper.fetch_listing_details(listing_id)
                     if detailed:
-                        # Merge detailed info with summary
-                        listing.update(detailed)
+                        # Flatten the nested structure from scraper into flat keys for formatter
+                        flattened = self._flatten_listing_details(detailed)
+                        # Merge flattened details with summary, detailed info takes priority
+                        listing.update(flattened)
                         enriched.append(listing)
                     else:
                         # Use summary if details fetch fails
@@ -300,6 +303,80 @@ class TelegramBotScheduler(threading.Thread):
                 enriched.append(listing)
 
         return enriched
+
+    def _flatten_listing_details(self, detailed: Dict) -> Dict:
+        """
+        Flatten nested listing detail structure into flat keys for formatter
+
+        The scraper returns: {
+            "vehicle": {"make": ..., "model": ..., "year": ...},
+            "engine": {"fuel_type": ..., "displacement_liters": ..., "transmission": ...},
+            "condition": {"mileage_km": ..., "customs_cleared": ...},
+            "pricing": {"price": ..., "currency": ...},
+            "seller": {"location": ..., "seller_name": ...}
+        }
+
+        This method flattens it to: {
+            "make": ..., "model": ..., "year": ...,
+            "fuel_type": ..., "displacement_liters": ..., "transmission": ...,
+            "mileage_km": ..., "customs_cleared": ...,
+            "price": ..., "currency": ...,
+            "location": ..., "seller_name": ...
+        }
+
+        Args:
+            detailed: Nested detailed listing dictionary
+
+        Returns:
+            Flattened dictionary with all keys at top level
+        """
+        flattened = {}
+
+        # Extract vehicle info
+        vehicle = detailed.get("vehicle", {})
+        if vehicle:
+            for key in ['make', 'model', 'year', 'color', 'body_type', 'category',
+                       'interior_color', 'interior_material', 'wheel_position', 'doors', 'seats']:
+                if key in vehicle and vehicle[key]:
+                    flattened[key] = vehicle[key]
+
+        # Extract engine info
+        engine = detailed.get("engine", {})
+        if engine:
+            for key in ['fuel_type', 'displacement_liters', 'cylinders', 'transmission',
+                       'power_hp', 'drive_type']:
+                if key in engine and engine[key]:
+                    flattened[key] = engine[key]
+
+        # Extract condition/mileage info
+        condition = detailed.get("condition", {})
+        if condition:
+            for key in ['mileage_km', 'mileage_unit', 'customs_cleared', 'technical_inspection_passed',
+                       'has_catalytic_converter']:
+                if key in condition and condition[key] is not None:
+                    flattened[key] = condition[key]
+
+        # Extract pricing info
+        pricing = detailed.get("pricing", {})
+        if pricing:
+            for key in ['price', 'currency', 'currency_id', 'exchange_possible', 'negotiable',
+                       'installment_available']:
+                if key in pricing and pricing[key] is not None:
+                    flattened[key] = pricing[key]
+
+        # Extract seller info
+        seller = detailed.get("seller", {})
+        if seller:
+            for key in ['seller_name', 'location', 'phone', 'email', 'seller_type']:
+                if key in seller and seller[key]:
+                    flattened[key] = seller[key]
+
+        # Extract top-level fields that might not be nested
+        for key in ['url', 'listing_id', 'posted_date', 'last_updated', 'description', 'photos']:
+            if key in detailed and detailed[key] is not None:
+                flattened[key] = detailed[key]
+
+        return flattened
 
     def _send_notifications_to_user(self, telegram_user_id: str, chat_id: int, listings: List[Dict]):
         """

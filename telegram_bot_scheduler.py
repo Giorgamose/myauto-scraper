@@ -12,6 +12,7 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
+from notifications_telegram import TelegramNotificationManager
 
 # Load environment variables
 load_dotenv('.env.local')
@@ -248,6 +249,7 @@ class TelegramBotScheduler(threading.Thread):
     def _send_notifications_to_user(self, telegram_user_id: str, chat_id: int, listings: List[Dict]):
         """
         Send notifications to a Telegram user for new listings
+        Uses the same batching logic as notifications_telegram.py
 
         Args:
             telegram_user_id: User UUID from telegram_users table
@@ -268,19 +270,37 @@ class TelegramBotScheduler(threading.Thread):
             # Send to individual user
             logger.info(f"[*] Sending {len(listings)} notification(s) to user {telegram_user_id} (chat {chat_id})")
 
-            # Format message with listings
+            # Handle single listing
             if len(listings) == 1:
                 message = self._format_single_listing_notification(listings[0])
-            else:
-                message = self._format_multiple_listings_notification(listings)
+                success = self.bot_backend.send_message(chat_id, message)
 
-            # Send via bot
-            success = self.bot_backend.send_message(chat_id, message)
-
-            if success:
-                logger.info(f"[OK] Notification sent to chat {chat_id}")
+                if success:
+                    logger.info(f"[OK] Notification sent to chat {chat_id}")
+                else:
+                    logger.warning(f"[WARN] Failed to send notification to chat {chat_id}")
             else:
-                logger.warning(f"[WARN] Failed to send notification to chat {chat_id}")
+                # Handle multiple listings with batching (same as notifications_telegram.py)
+                batches = TelegramNotificationManager._split_listings_into_batches(listings, max_listings_per_batch=10)
+
+                for batch_num, batch in enumerate(batches, 1):
+                    # Format with batch info if multi-batch
+                    if len(batches) > 1:
+                        message = TelegramNotificationManager._format_multiple_listings(
+                            batch,
+                            batch_num=batch_num,
+                            total_batches=len(batches),
+                            total_listings=len(listings)
+                        )
+                    else:
+                        message = self._format_multiple_listings_notification(batch)
+
+                    success = self.bot_backend.send_message(chat_id, message)
+
+                    if success:
+                        logger.info(f"[OK] Batch {batch_num} sent to chat {chat_id}")
+                    else:
+                        logger.warning(f"[WARN] Failed to send batch {batch_num} to chat {chat_id}")
 
         except Exception as e:
             logger.error(f"[ERROR] Error sending notifications: {e}")
@@ -288,6 +308,7 @@ class TelegramBotScheduler(threading.Thread):
     def _send_notifications_to_channel(self, channel_id: str, listings: List[Dict]):
         """
         Send notifications to a Telegram channel instead of individual chats
+        Uses the same batching logic as notifications_telegram.py
 
         Args:
             channel_id: Telegram channel ID or username (e.g., '-1001234567890' or '@channel_name')
@@ -299,19 +320,37 @@ class TelegramBotScheduler(threading.Thread):
         try:
             logger.info(f"[*] Sending {len(listings)} notification(s) to channel {channel_id}")
 
-            # Format message with listings
+            # Handle single listing
             if len(listings) == 1:
                 message = self._format_single_listing_notification(listings[0])
-            else:
-                message = self._format_multiple_listings_notification(listings)
+                success = self.bot_backend.send_message(channel_id, message)
 
-            # Send to channel
-            success = self.bot_backend.send_message(channel_id, message)
-
-            if success:
-                logger.info(f"[OK] Notification sent to channel {channel_id}")
+                if success:
+                    logger.info(f"[OK] Notification sent to channel {channel_id}")
+                else:
+                    logger.warning(f"[WARN] Failed to send notification to channel {channel_id}")
             else:
-                logger.warning(f"[WARN] Failed to send notification to channel {channel_id}")
+                # Handle multiple listings with batching (same as notifications_telegram.py)
+                batches = TelegramNotificationManager._split_listings_into_batches(listings, max_listings_per_batch=10)
+
+                for batch_num, batch in enumerate(batches, 1):
+                    # Format with batch info if multi-batch
+                    if len(batches) > 1:
+                        message = TelegramNotificationManager._format_multiple_listings(
+                            batch,
+                            batch_num=batch_num,
+                            total_batches=len(batches),
+                            total_listings=len(listings)
+                        )
+                    else:
+                        message = self._format_multiple_listings_notification(batch)
+
+                    success = self.bot_backend.send_message(channel_id, message)
+
+                    if success:
+                        logger.info(f"[OK] Batch {batch_num} sent to channel {channel_id}")
+                    else:
+                        logger.warning(f"[WARN] Failed to send batch {batch_num} to channel {channel_id}")
 
         except Exception as e:
             logger.error(f"[ERROR] Error sending to channel: {e}")
@@ -320,6 +359,7 @@ class TelegramBotScheduler(threading.Thread):
     def _format_single_listing_notification(listing: Dict) -> str:
         """
         Format a notification message for a single new listing
+        Uses the exact same formatting as notifications_telegram.py
 
         Args:
             listing: Listing dictionary
@@ -327,65 +367,13 @@ class TelegramBotScheduler(threading.Thread):
         Returns:
             Formatted message string
         """
-        # Extract fields - use title if make/model not available
-        make = listing.get("make", "").strip()
-        model = listing.get("model", "").strip()
-        year = listing.get("year", "")
-        title = listing.get("title", "").strip()
-
-        # Build title from make/model/year if available, otherwise use title field
-        if make or model:
-            display_title = f"{make} {model}".strip()
-            if year:
-                display_title += f" ({year})"
-        else:
-            display_title = title if title else "New Vehicle"
-
-        price = listing.get("price", "N/A")
-        mileage = listing.get("mileage_km", "N/A")
-        location = listing.get("location") or "N/A"
-        fuel_type = (listing.get("fuel_type") or "").strip()
-        transmission = (listing.get("transmission") or "").strip()
-        url = listing.get("url") or ""
-
-        # Format price
-        if isinstance(price, (int, float)):
-            price_str = f"₾{price:,.0f}"
-        else:
-            price_str = str(price)
-
-        # Format mileage
-        if isinstance(mileage, (int, float)):
-            mileage_str = f"{mileage:,.0f} km"
-        else:
-            mileage_str = str(mileage)
-
-        # Ensure URL is complete
-        if url and not url.startswith("http"):
-            url = f"https://www.myauto.ge{url}"
-
-        message = f"""<b>🚗 NEW LISTING FOUND!</b>
-
-<b>{display_title}</b>
-
-💰 {price_str} | 📍 {location}
-🛣️ {mileage_str}"""
-
-        # Add optional fields only if available
-        if fuel_type:
-            message += f"\n⛽ {fuel_type}"
-        if transmission:
-            message += f" | 🔄 {transmission}"
-
-        message += f"\n\n<a href=\"{url}\">View full listing →</a>"
-
-        return message
+        return TelegramNotificationManager._format_new_listing(listing)
 
     @staticmethod
     def _format_multiple_listings_notification(listings: List[Dict]) -> str:
         """
         Format a notification message for multiple new listings
-        Uses the same format as the existing project's notifications_telegram.py
+        Uses the exact same formatting as notifications_telegram.py
 
         Args:
             listings: List of listing dictionaries
@@ -393,91 +381,7 @@ class TelegramBotScheduler(threading.Thread):
         Returns:
             Formatted message string
         """
-        # Use correct singular/plural form
-        listing_word = "LISTING" if len(listings) == 1 else "LISTINGS"
-        message = f"<b>🎉 {len(listings)} NEW CAR {listing_word}!</b>\n\n"
-
-        for i, listing in enumerate(listings[:10], 1):  # Limit to 10 to avoid message size issues
-            # Format title - use individual fields if available, otherwise use title field
-            make = listing.get("make", "").strip() if listing.get("make") else ""
-            model = listing.get("model", "").strip() if listing.get("model") else ""
-            year = listing.get("year", "")
-            title = listing.get("title", "").strip() if listing.get("title") else ""
-
-            # Build display title
-            if make or model:
-                display_title = f"{make} {model}".strip()
-                if year:
-                    display_title += f" ({year})"
-            else:
-                display_title = title if title else "New Vehicle"
-
-            # Format price with Georgian Lari symbol (₾)
-            price = listing.get("price")
-            if not price:
-                price_str = 'N/A'
-            elif isinstance(price, (int, float)):
-                price_str = f"₾{price:,.0f}"
-            else:
-                # Try to parse string price
-                try:
-                    price_num = int(str(price).replace(',', '').replace(' ', ''))
-                    if price_num > 100:
-                        price_str = f"₾{price_num:,.0f}"
-                    else:
-                        price_str = f"₾{price}"
-                except (ValueError, AttributeError, TypeError):
-                    price_str = 'N/A'
-
-            # Format mileage safely
-            mileage = listing.get("mileage_km")
-            if not mileage:
-                mileage_str = 'N/A'
-            elif isinstance(mileage, (int, float)):
-                mileage_str = f"{mileage:,.0f}"
-            else:
-                # Try to parse string mileage
-                try:
-                    mileage_num = int(str(mileage).replace(',', '').replace(' ', ''))
-                    mileage_str = f"{mileage_num:,.0f}"
-                except (ValueError, AttributeError, TypeError):
-                    mileage_str = 'N/A'
-
-            # Get optional fields with proper None handling (use empty string, not 'N/A')
-            # Use (value or "") to handle both missing keys and None values
-            location = (listing.get("location") or "").strip()
-            fuel_type = (listing.get("fuel_type") or "").strip()
-            transmission = (listing.get("transmission") or "").strip()
-            url = listing.get("url") or ""
-
-            # Ensure URL is complete
-            if url and not url.startswith("http"):
-                url = f"https://www.myauto.ge{url}"
-
-            # Format the listing entry - clean compact format
-            message += f"<b>{i}. {display_title}</b>\n"
-            message += f"   {price_str}"
-            if location:
-                message += f" | 📍 {location}"
-            message += f"\n   🛣️ {mileage_str} km"
-
-            # Add optional fields only if available (not empty or N/A)
-            extras = []
-            if fuel_type:
-                extras.append(f"⛽ {fuel_type}")
-            if transmission:
-                extras.append(f"🔄 {transmission}")
-
-            if extras:
-                message += f" | {' | '.join(extras)}"
-
-            message += f"\n   <a href=\"{url}\">View listing →</a>\n\n"
-
-        # Add info about additional listings if any
-        if len(listings) > 10:
-            message += f"\n<i>...and {len(listings) - 10} more listings</i>"
-
-        return message
+        return TelegramNotificationManager._format_multiple_listings(listings)
 
     def _perform_cleanup(self):
         """Perform maintenance tasks"""

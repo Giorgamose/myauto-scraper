@@ -433,9 +433,13 @@ class TelegramBotScheduler(threading.Thread):
                     success = self.bot_backend.send_message(chat_id, message)
 
                     if success:
-                        logger.info(f"[OK] Batch {batch_num} sent to chat {chat_id}")
+                        logger.info(f"[OK] Batch {batch_num}/{len(batches)} sent to chat {chat_id}")
                     else:
-                        logger.warning(f"[WARN] Failed to send batch {batch_num} to chat {chat_id}")
+                        logger.warning(f"[WARN] Failed to send batch {batch_num}/{len(batches)} to chat {chat_id}")
+
+                    # Add small delay between messages to ensure they're all delivered
+                    if batch_num < len(batches):
+                        time.sleep(1)
 
         except Exception as e:
             logger.error(f"[ERROR] Error sending notifications: {e}")
@@ -483,9 +487,13 @@ class TelegramBotScheduler(threading.Thread):
                     success = self.bot_backend.send_message(channel_id, message)
 
                     if success:
-                        logger.info(f"[OK] Batch {batch_num} sent to channel {channel_id}")
+                        logger.info(f"[OK] Batch {batch_num}/{len(batches)} sent to channel {channel_id}")
                     else:
-                        logger.warning(f"[WARN] Failed to send batch {batch_num} to channel {channel_id}")
+                        logger.warning(f"[WARN] Failed to send batch {batch_num}/{len(batches)} to channel {channel_id}")
+
+                    # Add small delay between messages to ensure they're all delivered
+                    if batch_num < len(batches):
+                        time.sleep(1)
 
         except Exception as e:
             logger.error(f"[ERROR] Error sending to channel: {e}")

@@ -290,14 +290,21 @@ class TelegramBotScheduler(threading.Thread):
                     if detailed:
                         # Flatten the nested structure from scraper into flat keys for formatter
                         flattened = self._flatten_listing_details(detailed)
+
+                        # Log what we're enriching with
+                        if flattened:
+                            fields_found = [k for k in ['fuel_type', 'transmission', 'drive_type', 'location', 'displacement_liters'] if k in flattened and flattened[k]]
+                            logger.debug(f"[OK] Enriched listing {listing_id} with: {fields_found}")
+
                         # Merge flattened details with summary, detailed info takes priority
                         listing.update(flattened)
                         enriched.append(listing)
                     else:
                         # Use summary if details fetch fails
+                        logger.debug(f"[WARN] No detailed data fetched for listing {listing_id}, using summary only")
                         enriched.append(listing)
                 except Exception as e:
-                    logger.debug(f"[WARN] Could not fetch details for listing {listing_id}: {e}")
+                    logger.warning(f"[WARN] Could not fetch details for listing {listing_id}: {e}")
                     enriched.append(listing)
             else:
                 enriched.append(listing)

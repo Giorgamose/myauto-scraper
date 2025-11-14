@@ -20,8 +20,6 @@ import sys
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 # Import local modules
 from utils import (
@@ -70,10 +68,6 @@ class CarListingMonitor:
             "errors_encountered": 0,
             "start_time": datetime.now()
         }
-
-        # Thread-safe locking for database and statistics updates
-        self.stats_lock = threading.Lock()
-        self.db_lock = threading.Lock()
 
     def initialize(self) -> bool:
         """
@@ -323,152 +317,6 @@ class CarListingMonitor:
 
         return flattened
 
-    def _process_search_with_parallel_details(self, search_config: Dict) -> Tuple[List[Dict], int]:
-        """
-        Process a single search and fetch listing details in parallel
-
-        Args:
-            search_config: Search configuration dictionary
-
-        Returns:
-            Tuple of (new_listings, new_count)
-        """
-
-        search_id = search_config.get("id")
-        search_name = search_config.get("name")
-        base_url = search_config.get("base_url")
-
-        logger.info(f"[*] Processing search: {search_name}")
-
-        try:
-            # Fetch listings from MyAuto.ge
-            logger.info(f"[*] Fetching listings from {base_url}")
-            listings = self.scraper.fetch_search_results(search_config)
-
-            if not listings:
-                logger.warning(f"[WARN] No listings found for {search_name}")
-                return [], 0
-
-            logger.info(f"[OK] Found {len(listings)} listings")
-
-            # Detect new listings
-            new_listings = []
-            for listing in listings:
-                listing_id = listing.get("listing_id")
-
-                with self.db_lock:
-                    if listing_id and not self.database.has_seen_listing(listing_id):
-                        new_listings.append(listing)
-                        logger.info(f"[+] New listing: {format_listing_for_display(listing)}")
-
-            if not new_listings:
-                logger.info(f"[*] No new listings detected for {search_name}")
-                with self.stats_lock:
-                    self.stats["total_listings_found"] += len(listings)
-                return [], 0
-
-            logger.info(f"[OK] Detected {len(new_listings)} new listings for {search_name}")
-
-            # Fetch details in parallel for new listings
-            detailed_listings = self._fetch_listing_details_parallel(new_listings, search_name)
-
-            with self.stats_lock:
-                self.stats["total_listings_found"] += len(listings)
-                self.stats["new_listings_found"] += len(detailed_listings)
-
-            return detailed_listings, len(detailed_listings)
-
-        except Exception as e:
-            logger.error(f"[ERROR] Error processing search {search_name}: {e}")
-            with self.stats_lock:
-                self.stats["errors_encountered"] += 1
-            return [], 0
-
-    def _fetch_listing_details_parallel(self, listings: List[Dict], search_name: str = None, max_workers: int = 8) -> List[Dict]:
-        """
-        Fetch listing details in parallel for multiple listings
-
-        Args:
-            listings: List of listings to fetch details for
-            search_name: Name of search (for logging)
-            max_workers: Maximum number of concurrent threads (default 8 for faster fetching)
-
-        Returns:
-            List of detailed listings
-        """
-
-        detailed_listings = []
-        failed_count = 0
-
-        # Adjust workers based on number of listings
-        actual_workers = min(max_workers, max(1, len(listings)))
-        logger.info(f"[*] Fetching details for {len(listings)} listings in parallel ({actual_workers} workers)...")
-
-        with ThreadPoolExecutor(max_workers=actual_workers) as executor:
-            # Submit all tasks
-            future_to_listing = {
-                executor.submit(self._fetch_and_store_listing, listing): listing
-                for listing in listings
-            }
-
-            # Process completed tasks as they finish
-            for future in as_completed(future_to_listing):
-                listing = future_to_listing[future]
-                try:
-                    result = future.result()
-                    if result:
-                        detailed_listings.append(result)
-                    else:
-                        logger.warning(f"[WARN] Failed to fetch details for listing {listing.get('listing_id')}")
-                        failed_count += 1
-                except Exception as e:
-                    logger.error(f"[ERROR] Error fetching details: {e}")
-                    failed_count += 1
-                    with self.stats_lock:
-                        self.stats["errors_encountered"] += 1
-
-        logger.info(f"[OK] Fetched details for {len(detailed_listings)}/{len(listings)} listings ({failed_count} failures)")
-
-        return detailed_listings
-
-    def _fetch_and_store_listing(self, listing: Dict) -> Optional[Dict]:
-        """
-        Fetch complete details for a listing and store in database
-
-        Args:
-            listing: Listing summary dictionary
-
-        Returns:
-            Detailed listing or None on failure
-        """
-
-        listing_id = listing.get("listing_id")
-
-        try:
-            logger.debug(f"[*] Fetching details for listing {listing_id}...")
-
-            # Fetch complete listing details
-            listing_details = self.scraper.fetch_listing_details(listing_id)
-
-            if listing_details:
-                # Store with database lock
-                with self.db_lock:
-                    self.database.store_listing(listing_details)
-                    logger.info(f"[OK] Stored listing {listing_id}")
-                return listing_details
-            else:
-                # Store what we have even if details fetch failed
-                logger.warning(f"[WARN] Could not fetch details for {listing_id}, storing summary only")
-                with self.db_lock:
-                    self.database.store_listing(listing)
-                return listing
-
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to fetch/store listing {listing_id}: {e}")
-            with self.stats_lock:
-                self.stats["errors_encountered"] += 1
-            return None
-
     def send_listing_notifications(self, new_listings: List[Dict]) -> int:
         """
         Send notifications for new listings
@@ -619,7 +467,7 @@ class CarListingMonitor:
 
             for search_config in enabled_searches:
                 self.stats["searches_processed"] += 1
-                new_listings, new_count = self._process_search_with_parallel_details(search_config)
+                new_listings, new_count = self.process_search(search_config)
 
                 # Send notifications for new listings
                 if new_listings:

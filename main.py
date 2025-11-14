@@ -614,9 +614,17 @@ class CarListingMonitor:
                 logger.error("[ERROR] Failed to initialize services")
                 return False
 
-            # Process searches in parallel
+            # Process each enabled search (sequentially to avoid Playwright threading issues)
             enabled_searches = get_enabled_searches(self.config)
-            self._process_searches_parallel(enabled_searches)
+
+            for search_config in enabled_searches:
+                self.stats["searches_processed"] += 1
+                new_listings, new_count = self._process_search_with_parallel_details(search_config)
+
+                # Send notifications for new listings
+                if new_listings:
+                    notifications_sent = self.send_listing_notifications(new_listings)
+                    self.stats["notifications_sent"] += notifications_sent
 
             # Send status notification if no new listings found
             self.send_status_notification()
@@ -637,61 +645,6 @@ class CarListingMonitor:
             logger.error(f"[ERROR] Monitoring cycle failed: {e}")
             self.stats["errors_encountered"] += 1
             return False
-
-    def _process_searches_parallel(self, enabled_searches: List[Dict]) -> None:
-        """
-        Process multiple searches in parallel (Level 1 parallelization)
-
-        Args:
-            enabled_searches: List of enabled search configurations
-        """
-
-        if not enabled_searches:
-            logger.warning("[WARN] No enabled searches to process")
-            return
-
-        # Determine number of workers based on number of searches
-        max_workers = min(len(enabled_searches), 4)  # Max 4 parallel searches
-        logger.info(f"[*] Processing {len(enabled_searches)} searches in parallel ({max_workers} workers)...")
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all search tasks
-            future_to_search = {
-                executor.submit(self._execute_search_and_notify, search_config): search_config
-                for search_config in enabled_searches
-            }
-
-            # Process completed tasks as they finish
-            for future in as_completed(future_to_search):
-                search_config = future_to_search[future]
-                try:
-                    future.result()  # This will raise any exceptions from the thread
-                except Exception as e:
-                    logger.error(f"[ERROR] Exception in search thread: {e}")
-                    with self.stats_lock:
-                        self.stats["errors_encountered"] += 1
-
-        logger.info(f"[OK] All {len(enabled_searches)} searches completed")
-
-    def _execute_search_and_notify(self, search_config: Dict) -> None:
-        """
-        Execute a single search and send notifications (runs in parallel)
-
-        Args:
-            search_config: Search configuration dictionary
-        """
-
-        with self.stats_lock:
-            self.stats["searches_processed"] += 1
-
-        # Process search with parallel listing detail fetching
-        new_listings, new_count = self._process_search_with_parallel_details(search_config)
-
-        # Send notifications for new listings
-        if new_listings:
-            notifications_sent = self.send_listing_notifications(new_listings)
-            with self.stats_lock:
-                self.stats["notifications_sent"] += notifications_sent
 
     def _log_summary(self):
         """Log summary statistics for the monitoring cycle"""

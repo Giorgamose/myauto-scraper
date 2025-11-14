@@ -191,21 +191,32 @@ class CarListingMonitor:
 
             logger.info(f"[OK] Found {len(listings)} listings")
 
-            # Detect new listings
+            # Detect new listings by comparing with database
             new_listings = []
+            existing_count = 0
+
             for listing in listings:
                 listing_id = listing.get("listing_id")
 
                 if listing_id and not self.database.has_seen_listing(listing_id):
+                    # NEW listing - not in database yet
                     new_listings.append(listing)
                     logger.info(f"[+] New listing: {format_listing_for_display(listing)}")
+                else:
+                    # EXISTING listing - already in database, skip detail fetching
+                    existing_count += 1
+
+            # Log the optimization result
+            if existing_count > 0:
+                logger.info(f"[*] Skipped {existing_count} existing listings (already in DB)")
 
             # Store detailed listings for notification (with fuel_type and other details)
             detailed_listings = []
 
             if new_listings:
-                logger.info(f"[OK] Detected {len(new_listings)} new listings")
+                logger.info(f"[OK] Detected {len(new_listings)} new listings - fetching details...")
 
+                # OPTIMIZATION: Only fetch details for NEW listings, skip existing ones
                 # Fetch detailed information for each new listing and store
                 for listing in new_listings:
                     try:

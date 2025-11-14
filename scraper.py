@@ -73,11 +73,11 @@ class MyAutoScraper:
             "Referer": "https://www.myauto.ge/",
         }
 
-        # Get settings with defaults
-        self.timeout = self.config.get("request_timeout_seconds", 30) * 1000  # Convert to ms for Playwright (increased from 15s to 30s)
-        self.delay = self.config.get("delay_between_requests_seconds", 3)
-        self.max_retries = self.config.get("max_retries", 5)
-        self.retry_delay = self.config.get("retry_delay_seconds", 5)
+        # Get settings with defaults (optimized for speed)
+        self.timeout = self.config.get("request_timeout_seconds", 15) * 1000  # Convert to ms for Playwright (reduced to 15s)
+        self.delay = self.config.get("delay_between_requests_seconds", 1)  # Reduced from 3s to 1s
+        self.max_retries = self.config.get("max_retries", 2)
+        self.retry_delay = self.config.get("retry_delay_seconds", 2)  # Reduced from 5s to 2s
 
     def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 6) -> List[Dict]:
         """
@@ -279,8 +279,8 @@ class MyAutoScraper:
                     logger.debug(f"[*] Enforcing delay: sleeping {sleep_time:.2f}s")
                     time.sleep(sleep_time)
 
-                # Add random jitter to seem more human-like
-                jitter = random.uniform(0.1, 0.5)
+                # Add minimal random jitter to seem human-like (reduced for speed)
+                jitter = random.uniform(0.05, 0.15)  # Reduced from 0.1-0.5 to 0.05-0.15
                 time.sleep(jitter)
 
                 # Build full URL with parameters
@@ -335,28 +335,27 @@ class MyAutoScraper:
 
                     try:
                         if is_detail_page:
-                            # For detail pages, wait for vehicle-specific elements
-                            logger.debug("[*] Detail page detected - waiting for vehicle info...")
+                            # For detail pages, wait for the price element (loads first - faster selector)
+                            logger.debug("[*] Detail page detected - waiting for price element...")
                             page.wait_for_selector(
-                                'h1, [class*="price"], [class*="make"], [class*="model"], [class*="year"], [class*="mileage"]',
-                                timeout=6000
+                                '[class*="price"]',  # Faster selector - price usually loads first
+                                timeout=1000  # Reduced from 6000ms to 1000ms (1 second)
                             )
-                            logger.debug("[OK] Vehicle info elements loaded")
+                            logger.debug("[OK] Price element loaded")
                         else:
-                            # For search results, wait for listing links or "no results"
+                            # For search results, wait for listing items (loads early - faster selector)
                             logger.debug("[*] Search results page - waiting for listings...")
                             page.wait_for_selector(
-                                'a[href*="/pr/"], [class*="no-result"], [class*="empty"]',
-                                timeout=5000
+                                'a[href*="/pr/"]',  # Faster selector - listing links load early
+                                timeout=1000  # Reduced from 5000ms to 1000ms (1 second)
                             )
                             logger.debug("[OK] Listings loaded")
                     except Exception as e:
                         logger.debug(f"[*] Content wait timed out or failed (may be OK): {e}")
                         # Continue anyway - page might still have content
 
-                    # Add delay to ensure content is fully rendered
-                    # Detail pages may need more time for React rendering
-                    delay = 3 if is_detail_page else 2
+                    # Minimal delay to ensure content is rendered (greatly reduced for speed)
+                    delay = 0.5 if is_detail_page else 0.3  # Reduced from 3s/2s to 0.5s/0.3s
                     time.sleep(delay)
 
                     html_content = page.content()

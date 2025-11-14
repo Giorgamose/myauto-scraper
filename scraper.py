@@ -74,10 +74,10 @@ class MyAutoScraper:
         }
 
         # Get settings with defaults (optimized for speed)
-        self.timeout = self.config.get("request_timeout_seconds", 15) * 1000  # Convert to ms for Playwright (reduced to 15s)
-        self.delay = self.config.get("delay_between_requests_seconds", 1)  # Reduced from 3s to 1s
-        self.max_retries = self.config.get("max_retries", 2)
-        self.retry_delay = self.config.get("retry_delay_seconds", 2)  # Reduced from 5s to 2s
+        self.timeout = self.config.get("request_timeout_seconds", 60) * 1000  # Convert to ms for Playwright (reduced to 15s)
+        self.delay = self.config.get("delay_between_requests_seconds", 20)  # Reduced from 3s to 1s
+        self.max_retries = self.config.get("max_retries", 3)
+        self.retry_delay = self.config.get("retry_delay_seconds", 3)  # Reduced from 5s to 2s
 
     def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 6) -> List[Dict]:
         """

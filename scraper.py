@@ -8,12 +8,10 @@ Uses Playwright for JavaScript-enabled scraping to bypass bot detection
 import logging
 import time
 import random
-import threading
 from typing import List, Dict, Optional, Any
 from bs4 import BeautifulSoup
 from parser import MyAutoParser
 from urllib.parse import urljoin, quote, urlencode, urlparse, parse_qs
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from playwright.sync_api import sync_playwright, Page
@@ -58,7 +56,6 @@ class MyAutoScraper:
 
         # Track last request time for delays
         self.last_request_time = 0
-        self.request_lock = threading.Lock()  # Lock for request timing
 
         # Setup headers with realistic browser simulation
         self.headers = {
@@ -84,8 +81,8 @@ class MyAutoScraper:
 
     def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 6) -> List[Dict]:
         """
-        Fetch search results from MyAuto.ge with parallel page fetching
-        Fetches first page sequentially, then remaining pages in parallel (reduced to 6 pages max for speed)
+        Fetch search results from MyAuto.ge across multiple pages (sequential)
+        Reduced max pages from 10 to 6 for faster results (80% of new listings in first 3-4 pages)
 
         Args:
             search_config: Search configuration with URL and parameters
@@ -115,121 +112,68 @@ class MyAutoScraper:
                 logger.debug(f"[*] Extracted params from URL")
 
             logger.info(f"[*] Fetching search results: {search_config.get('name')}")
-            logger.info(f"[*] Will fetch up to {max_pages} pages (with parallel fetching)")
+            logger.info(f"[*] Will fetch up to {max_pages} pages")
 
             all_listings = []
             seen_ids = set()
             seen_urls = set()
+            pages_fetched = 0
 
-            # Fetch first page to check if there are more pages
-            first_page_params = params.copy()
-            first_page_params["page"] = 1
-            response = self._make_request(base_url, params=first_page_params)
+            for page_num in range(1, max_pages + 1):
+                try:
+                    logger.info(f"[*] Fetching page {page_num}...")
 
-            if not response:
-                logger.warning(f"[WARN] Failed to fetch page 1")
-                return []
+                    params["page"] = page_num
+                    response = self._make_request(base_url, params=params)
 
-            # Parse first page
-            page_listings = self._parse_search_results(response["html"], base_url)
-            if not page_listings:
-                logger.info(f"[*] Search returned no listings")
-                return []
+                    if not response:
+                        logger.warning(f"[WARN] Failed to fetch page {page_num}")
+                        break
 
-            logger.info(f"[OK] Page 1: {len(page_listings)} listings")
-            all_listings.extend(page_listings)
+                    page_listings = self._parse_search_results(response["html"], base_url)
+                    pages_fetched += 1
 
-            # Track seen listings
-            for listing in page_listings:
-                listing_id = listing.get("listing_id")
-                listing_url = listing.get("url")
-                if listing_id:
-                    seen_ids.add(listing_id)
-                elif listing_url:
-                    seen_urls.add(listing_url)
+                    if not page_listings:
+                        logger.info(f"[*] Page {page_num} returned no listings - stopping")
+                        break
 
-            # If first page has few listings, likely only one page
-            if len(page_listings) < 20:
-                logger.info(f"[*] First page has fewer than 20 listings, likely only page available")
-                return all_listings
+                    # Add new listings (avoiding duplicates)
+                    new_count = 0
+                    for listing in page_listings:
+                        listing_id = listing.get("listing_id")
+                        listing_url = listing.get("url")
 
-            # Fetch remaining pages in parallel (2 to max_pages)
-            if max_pages > 1:
-                remaining_pages = list(range(2, max_pages + 1))
-                logger.info(f"[*] Fetching pages {remaining_pages} in parallel (3 workers)...")
+                        is_duplicate = False
+                        if listing_id:
+                            is_duplicate = listing_id in seen_ids
+                            if not is_duplicate:
+                                seen_ids.add(listing_id)
+                        elif listing_url:
+                            is_duplicate = listing_url in seen_urls
+                            if not is_duplicate:
+                                seen_urls.add(listing_url)
 
-                # Use 3 workers for parallel page fetching
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    future_to_page = {
-                        executor.submit(self._fetch_page, base_url, params, page_num): page_num
-                        for page_num in remaining_pages
-                    }
+                        if not is_duplicate:
+                            all_listings.append(listing)
+                            new_count += 1
 
-                    for future in as_completed(future_to_page):
-                        page_num = future_to_page[future]
-                        try:
-                            page_listings = future.result()
-                            if page_listings:
-                                new_count = 0
-                                for listing in page_listings:
-                                    listing_id = listing.get("listing_id")
-                                    listing_url = listing.get("url")
+                    logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
 
-                                    is_duplicate = False
-                                    if listing_id:
-                                        is_duplicate = listing_id in seen_ids
-                                        if not is_duplicate:
-                                            seen_ids.add(listing_id)
-                                    elif listing_url:
-                                        is_duplicate = listing_url in seen_urls
-                                        if not is_duplicate:
-                                            seen_urls.add(listing_url)
+                    # Stop if fewer than expected listings
+                    if len(page_listings) < 20:
+                        logger.info(f"[*] Page {page_num} has fewer than 20 listings, likely last page")
+                        break
 
-                                    if not is_duplicate:
-                                        all_listings.append(listing)
-                                        new_count += 1
+                except Exception as e:
+                    logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
+                    break
 
-                                logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
-                        except Exception as e:
-                            logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
-
-            logger.info(f"[OK] Total collected: {len(all_listings)} unique listings")
+            logger.info(f"[OK] Fetched {pages_fetched} pages with {len(all_listings)} total listings")
             return all_listings
 
         except Exception as e:
             logger.error(f"[ERROR] Error fetching search results: {e}")
             return []
-
-    def _fetch_page(self, base_url: str, params: Dict, page_num: int) -> Optional[List[Dict]]:
-        """
-        Fetch a single page of search results (for parallel page fetching)
-
-        Args:
-            base_url: Base URL for the search
-            params: Query parameters
-            page_num: Page number to fetch
-
-        Returns:
-            List of listings from the page or None on failure
-        """
-
-        try:
-            page_params = params.copy()
-            page_params["page"] = page_num
-
-            logger.debug(f"[*] Fetching page {page_num}...")
-            response = self._make_request(base_url, params=page_params)
-
-            if not response:
-                logger.warning(f"[WARN] Failed to fetch page {page_num}")
-                return None
-
-            page_listings = self._parse_search_results(response["html"], base_url)
-            return page_listings if page_listings else None
-
-        except Exception as e:
-            logger.error(f"[ERROR] Error fetching page {page_num}: {e}")
-            return None
 
     def fetch_listing_details(self, listing_id: str) -> Optional[Dict]:
         """

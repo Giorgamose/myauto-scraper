@@ -360,36 +360,6 @@ class MyAutoScraper:
 
                     html_content = page.content()
 
-                    # Log response details
-                    logger.info(f"[RESPONSE] Status: {status_code}")
-                    logger.info(f"[DEBUG] HTML size: {len(html_content)} bytes")
-                    logger.info(f"[DEBUG] HTML contains '/pr/': {'/pr/' in html_content}")
-                    logger.info(f"[DEBUG] '/pr/' count: {html_content.count('/pr/')}")
-
-                    # Log response headers
-                    try:
-                        headers = response.headers
-                        logger.debug(f"    Response headers:")
-                        for key, value in headers.items():
-                            logger.debug(f"      {key}: {value}")
-                    except Exception as e:
-                        logger.debug(f"    Could not read headers: {e}")
-
-                    # Log first 500 chars of HTML for inspection
-                    html_snippet = html_content[:500].replace('\n', ' ').replace('\t', ' ')
-                    logger.info(f"[DEBUG] HTML snippet (first 500 chars): {html_snippet}...")
-
-                    # If HTML seems wrong (too small or no listings), save it for inspection
-                    if len(html_content) < 200000 and "/pr/" not in html_content:
-                        logger.warning("[DEBUG] HTML seems incomplete - saving to debug file")
-                        try:
-                            debug_file = f"/tmp/myauto_debug_{int(time.time())}.html"
-                            with open(debug_file, 'w', encoding='utf-8') as f:
-                                f.write(html_content)
-                            logger.warning(f"[DEBUG] Saved HTML to: {debug_file}")
-                        except Exception as e:
-                            logger.debug(f"[DEBUG] Could not save debug HTML: {e}")
-
                     # Check status code
                     if status_code == 200:
                         logger.info(f"[OK] Response 200 OK - Request successful")
@@ -451,27 +421,6 @@ class MyAutoScraper:
         """
 
         try:
-            # DEBUG: Log HTML size and basic info
-            logger.info(f"[DEBUG] HTML size: {len(html)} bytes")
-
-            # Check if HTML contains expected content
-            has_pr_links = "/pr/" in html
-            logger.info(f"[DEBUG] HTML contains '/pr/' links: {has_pr_links}")
-
-            # Count /pr/ occurrences
-            pr_count = html.count("/pr/")
-            logger.info(f"[DEBUG] Total '/pr/' occurrences in HTML: {pr_count}")
-
-            # Check for common error indicators
-            if "no results" in html.lower():
-                logger.warning("[DEBUG] HTML contains 'no results' text - possible empty search")
-            if "404" in html or "error" in html.lower():
-                logger.warning("[DEBUG] HTML may contain error content")
-
-            # Log HTML snippet for debugging
-            html_snippet = html[:500].replace('\n', ' ').replace('\t', '')
-            logger.debug(f"[DEBUG] HTML snippet: {html_snippet}...")
-
             soup = BeautifulSoup(html, "lxml")
 
             listings = []
@@ -490,7 +439,6 @@ class MyAutoScraper:
 
             for selector in selectors:
                 elements = soup.select(selector)
-                logger.debug(f"[DEBUG] Selector '{selector}': found {len(elements)} elements")
                 if elements:
                     listing_elements = elements
                     logger.info(f"[OK] Found {len(elements)} listings using selector: {selector}")
@@ -498,17 +446,14 @@ class MyAutoScraper:
 
             # If no specific selectors work, try finding all links to /pr/
             if not listing_elements:
-                logger.info("[DEBUG] No listings found with standard selectors - trying /pr/ link fallback")
-
                 links = soup.find_all("a", href=lambda x: x and "/pr/" in x)
-                logger.info(f"[DEBUG] Found {len(links)} <a> tags with '/pr/' in href")
 
                 # Walk up to find the actual listing card container
                 # Link structure: <a> → <div> → <div class="flex flex-col..."> (listing card)
                 listing_elements = []
                 seen_elements = set()  # Track already-added containers to avoid duplicates
 
-                for idx, link in enumerate(links):
+                for link in links:
                     # Start from the link and walk up to find the listing container
                     current = link
                     for level in range(5):  # Walk up max 5 levels
@@ -525,14 +470,10 @@ class MyAutoScraper:
                                         seen_elements.add(elem_id)
                                     break
 
-                logger.info(f"[DEBUG] Extracted {len(listing_elements)} container divs from {len(links)} /pr/ links")
-
-            logger.info(f"[DEBUG] Total listing elements to parse: {len(listing_elements)}")
-
             # Parse each listing and deduplicate by ID
             seen_ids = set()
             parse_errors = 0
-            for idx, element in enumerate(listing_elements):
+            for element in listing_elements:
                 try:
                     listing = MyAutoParser.parse_listing_summary(element)
 
@@ -542,13 +483,8 @@ class MyAutoScraper:
                         if listing_id not in seen_ids:
                             listings.append(listing)
                             seen_ids.add(listing_id)
-                        else:
-                            logger.debug(f"[DEBUG] Skipped duplicate listing_id: {listing_id}")
-                    else:
-                        logger.debug(f"[DEBUG] Element {idx}: No listing_id found")
 
                 except Exception as e:
-                    logger.debug(f"[DEBUG] Error parsing element {idx}: {e}")
                     parse_errors += 1
                     continue
 

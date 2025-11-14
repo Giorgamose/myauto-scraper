@@ -378,7 +378,7 @@ class CarListingMonitor:
 
     def send_status_notification(self) -> bool:
         """
-        Send status/heartbeat notification
+        Send status/heartbeat notification to TELEGRAM_CHAT_ID when no listings found
 
         Returns:
             True if sent successfully
@@ -401,7 +401,7 @@ class CarListingMonitor:
             return False
 
         try:
-            logger.info("[*] Sending status notification...")
+            logger.info("[*] Sending status notification to TELEGRAM_CHAT_ID...")
             success = self.notifier.send_status(self.stats["total_listings_found"])
             if success:
                 logger.info("[OK] Status notification sent")

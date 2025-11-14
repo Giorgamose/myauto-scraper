@@ -112,13 +112,14 @@ class NotificationManager:
             logger.error(f"[ERROR] Error sending notifications: {e}")
             return False
 
-    def send_status(self, num_checked: int = 0, status: str = "active") -> bool:
+    def send_status(self, num_checked: int = 0, status: str = "active", chat_id: int = None) -> bool:
         """
         Send status/heartbeat notification
 
         Args:
             num_checked: Number of listings checked
             status: Status message (active, paused, etc)
+            chat_id: Optional chat_id to send to (if None, uses default TELEGRAM_CHAT_ID)
 
         Returns:
             True if successful
@@ -131,7 +132,7 @@ class NotificationManager:
         try:
             logger.info("[*] Sending status notification")
 
-            success = self.telegram.send_status_notification(num_checked)
+            success = self.telegram.send_status_notification(num_checked, chat_id=chat_id)
 
             if success:
                 logger.info("[OK] Status notification sent")

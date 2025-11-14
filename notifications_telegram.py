@@ -194,11 +194,26 @@ class TelegramNotificationManager:
 
         return all_sent
 
-    def send_status_notification(self, num_listings_checked=0):
-        """Send heartbeat/status notification"""
+    def send_status_notification(self, num_listings_checked=0, chat_id=None):
+        """Send heartbeat/status notification
+
+        Args:
+            num_listings_checked: Number of listings checked
+            chat_id: Optional chat_id to send to (defaults to self.chat_id)
+        """
 
         message = self._format_status(num_listings_checked)
-        return self.send_message(message)
+
+        # Use provided chat_id or default to instance chat_id
+        if chat_id:
+            # Temporarily override chat_id for this message
+            original_chat_id = self.chat_id
+            self.chat_id = chat_id
+            result = self.send_message(message)
+            self.chat_id = original_chat_id
+            return result
+        else:
+            return self.send_message(message)
 
     def send_error_notification(self, error_text, search_name=None):
         """Send error notification"""

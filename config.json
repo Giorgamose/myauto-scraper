@@ -2,55 +2,23 @@
   "search_configurations": [
     {
       "id": 1,
-      "name": "Toyota Land Cruiser Prado (1995-2008)",
+      "name": "Multi-brand SUVs and Cars (3500-26000 GEL)",
       "enabled": true,
-      "base_url": "https://www.myauto.ge/ka/s/iyideba-manqanebi-toyota-land-cruiser-land-cruiser-prado-1995-2008",
+      "base_url": "https://myauto.ge/ka/s/iyideba-manqanebi-jipi-hechbeqi-audi-daihatsu-ford-honda-hyundai-jaguar-land-rover-lexus-mazda-mitsubishi-nissan-subaru-suzuki-toyota-volkswagen-oldsmobile-iveco",
       "parameters": {
         "vehicleType": 0,
         "bargainType": 0,
-        "mansNModels": "41.1109.1499",
-        "yearFrom": 1995,
-        "yearTo": 2008,
-        "priceFrom": 11000,
-        "priceTo": 18000,
+        "mansNModels": "2-9-12-14-16-18-22-23-24-29-30-39-40-41-42-56-62",
+        "vehicleCats": "5.29",
+        "priceFrom": 3500,
+        "priceTo": 26000,
         "currId": 1,
         "mileageType": 1,
+        "gearTypes": 1,
         "fuelTypes": 3,
         "locations": "2.3.4.7.15.30.113.53.39.38.37.36.40.41.44.31.5.47.48.52.8.54.16.6.14.13.12.11.10.9.55.56.57.59.58.61.62.63.64.66.71.72.74.75.76.77.78.80.81.82.83.84.85.86.87.88.91.96.97.101.109.116.119.122.127.131.133.137.139.143",
-        "customs": 1
-      },
-      "notification_fields": [
-        "make",
-        "model",
-        "year",
-        "price",
-        "currency",
-        "mileage_km",
-        "fuel_type",
-        "transmission",
-        "location",
-        "posted_date",
-        "seller_name",
-        "url"
-      ]
-    },
-    {
-      "id": 2,
-      "name": "BMW & Honda Motorcycles (250-500cc)",
-      "enabled": true,
-      "base_url": "https://www.myauto.ge/ka/s/iyideba-motociklebi-bmw-honda",
-      "parameters": {
-        "vehicleType": 2,
-        "bargainType": 0,
-        "mansNModels": "3-14",
-        "engineFrom": 250,
-        "engineTo": 500,
-        "priceFrom": 2500,
-        "priceTo": 4500,
-        "currId": 1,
-        "mileageType": 1,
-        "locations": "2.3.4.7.15.30.113.53.39.38.37.36.40.41.44.31.5.47.48.52.8.54.16.6.14.13.12.11.10.9.55.56.57.59.58.61.62.63.64.66.71.72.74.75.76.77.78.80.81.82.83.84.85.86.87.88.91.96.97.101.109.116.119.122.127.131.133.137.139.143",
-        "customs": 1
+        "sort": 1,
+        "layoutId": 1
       },
       "notification_fields": [
         "make",

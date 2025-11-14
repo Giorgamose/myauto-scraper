@@ -347,7 +347,7 @@ class MyAutoScraper:
                             logger.debug("[*] Search results page - waiting for listings...")
                             page.wait_for_selector(
                                 'a[href*="/pr/"]',  # Faster selector - listing links load early
-                                timeout=60000  # 60 seconds wait for listings to appear
+                                timeout=10000  # 10 seconds - pages load in 3-5s typically
                             )
                             logger.debug("[OK] Listings loaded")
                     except Exception as e:
@@ -355,7 +355,7 @@ class MyAutoScraper:
                         # Continue anyway - page might still have content
 
                     # Delay to ensure content is fully rendered
-                    delay = 15.0 if is_detail_page else 15.0  # 15 seconds for both search and detail pages
+                    delay = 3.0 if is_detail_page else 3.0  # 3 seconds for React components to fully render
                     time.sleep(delay)
 
                     html_content = page.content()

@@ -8,10 +8,12 @@ Uses Playwright for JavaScript-enabled scraping to bypass bot detection
 import logging
 import time
 import random
+import threading
 from typing import List, Dict, Optional, Any
 from bs4 import BeautifulSoup
 from parser import MyAutoParser
 from urllib.parse import urljoin, quote, urlencode, urlparse, parse_qs
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from playwright.sync_api import sync_playwright, Page
@@ -56,6 +58,7 @@ class MyAutoScraper:
 
         # Track last request time for delays
         self.last_request_time = 0
+        self.request_lock = threading.Lock()  # Lock for request timing
 
         # Setup headers with realistic browser simulation
         self.headers = {
@@ -79,14 +82,14 @@ class MyAutoScraper:
         self.max_retries = self.config.get("max_retries", 5)
         self.retry_delay = self.config.get("retry_delay_seconds", 5)
 
-    def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 10) -> List[Dict]:
+    def fetch_search_results(self, search_config: Dict[str, Any], max_pages: int = 6) -> List[Dict]:
         """
-        Fetch search results from MyAuto.ge across multiple pages
-        Fetches up to max_pages to get comprehensive listing coverage
+        Fetch search results from MyAuto.ge with parallel page fetching
+        Fetches first page sequentially, then remaining pages in parallel (reduced to 6 pages max for speed)
 
         Args:
             search_config: Search configuration with URL and parameters
-            max_pages: Maximum number of pages to fetch (default 10)
+            max_pages: Maximum number of pages to fetch (default 6 for faster results)
 
         Returns:
             List of listing summaries from all pages
@@ -102,100 +105,131 @@ class MyAutoScraper:
             params = search_config.get("parameters", {}).copy()
 
             # Remove page parameter from base_url if it exists
-            # (will be added fresh for each page)
             parsed = urlparse(base_url)
             if parsed.query:
-                # Extract existing query parameters from base_url
                 query_params = parse_qs(parsed.query, keep_blank_values=True)
-                # Flatten the query params (parse_qs returns lists)
                 for key, values in query_params.items():
-                    if key != "page":  # Skip page param, we'll set it ourselves
+                    if key != "page":
                         params[key] = values[0] if values else ""
-
-                # Reconstruct base_url without query string
                 base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                logger.debug(f"[*] Extracted params from URL, cleaned base_url: {base_url}")
+                logger.debug(f"[*] Extracted params from URL")
 
             logger.info(f"[*] Fetching search results: {search_config.get('name')}")
-            logger.debug(f"    Base URL: {base_url}")
-            logger.info(f"[*] Will fetch up to {max_pages} pages")
+            logger.info(f"[*] Will fetch up to {max_pages} pages (with parallel fetching)")
 
             all_listings = []
             seen_ids = set()
-            seen_urls = set()  # Fallback deduplication using URLs
-            pages_fetched = 0
+            seen_urls = set()
 
-            for page_num in range(1, max_pages + 1):
-                try:
-                    logger.info(f"[*] Fetching page {page_num}...")
+            # Fetch first page to check if there are more pages
+            first_page_params = params.copy()
+            first_page_params["page"] = 1
+            response = self._make_request(base_url, params=first_page_params)
 
-                    # Add page parameter for MyAuto.ge pagination
-                    params["page"] = page_num
+            if not response:
+                logger.warning(f"[WARN] Failed to fetch page 1")
+                return []
 
-                    response = self._make_request(base_url, params=params)
-                    if not response:
-                        logger.warning(f"[WARN] Failed to fetch page {page_num} - stopping pagination")
-                        break
+            # Parse first page
+            page_listings = self._parse_search_results(response["html"], base_url)
+            if not page_listings:
+                logger.info(f"[*] Search returned no listings")
+                return []
 
-                    # Parse search results for this page
-                    page_listings = self._parse_search_results(response["html"], base_url)
-                    pages_fetched += 1
+            logger.info(f"[OK] Page 1: {len(page_listings)} listings")
+            all_listings.extend(page_listings)
 
-                    if not page_listings:
-                        logger.info(f"[*] Page {page_num} returned no listings - stopping pagination")
-                        break
+            # Track seen listings
+            for listing in page_listings:
+                listing_id = listing.get("listing_id")
+                listing_url = listing.get("url")
+                if listing_id:
+                    seen_ids.add(listing_id)
+                elif listing_url:
+                    seen_urls.add(listing_url)
 
-                    # Add new listings (avoiding duplicates)
-                    new_count = 0
-                    none_id_count = 0
-                    for listing in page_listings:
-                        listing_id = listing.get("listing_id")
-                        listing_url = listing.get("url")
+            # If first page has few listings, likely only one page
+            if len(page_listings) < 20:
+                logger.info(f"[*] First page has fewer than 20 listings, likely only page available")
+                return all_listings
 
-                        # Debug: track when listing_id is None
-                        if not listing_id:
-                            none_id_count += 1
+            # Fetch remaining pages in parallel (2 to max_pages)
+            if max_pages > 1:
+                remaining_pages = list(range(2, max_pages + 1))
+                logger.info(f"[*] Fetching pages {remaining_pages} in parallel (3 workers)...")
 
-                        # Try to deduplicate using listing_id first, fall back to URL
-                        is_duplicate = False
-                        if listing_id:
-                            is_duplicate = listing_id in seen_ids
-                            if not is_duplicate:
-                                seen_ids.add(listing_id)
-                        elif listing_url:
-                            # Fallback: use URL for deduplication if ID extraction failed
-                            is_duplicate = listing_url in seen_urls
-                            if not is_duplicate:
-                                seen_urls.add(listing_url)
+                # Use 3 workers for parallel page fetching
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    future_to_page = {
+                        executor.submit(self._fetch_page, base_url, params, page_num): page_num
+                        for page_num in remaining_pages
+                    }
 
-                        if not is_duplicate:
-                            all_listings.append(listing)
-                            new_count += 1
+                    for future in as_completed(future_to_page):
+                        page_num = future_to_page[future]
+                        try:
+                            page_listings = future.result()
+                            if page_listings:
+                                new_count = 0
+                                for listing in page_listings:
+                                    listing_id = listing.get("listing_id")
+                                    listing_url = listing.get("url")
 
-                    # Log warning if many listings have None listing_id
-                    if none_id_count > len(page_listings) * 0.5:
-                        logger.warning(f"[WARN] Page {page_num}: {none_id_count}/{len(page_listings)} listings have no listing_id - ID extraction may be failing")
+                                    is_duplicate = False
+                                    if listing_id:
+                                        is_duplicate = listing_id in seen_ids
+                                        if not is_duplicate:
+                                            seen_ids.add(listing_id)
+                                    elif listing_url:
+                                        is_duplicate = listing_url in seen_urls
+                                        if not is_duplicate:
+                                            seen_urls.add(listing_url)
 
-                    logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
+                                    if not is_duplicate:
+                                        all_listings.append(listing)
+                                        new_count += 1
 
-                    # If we got fewer than expected listings on this page, likely no more pages
-                    # MyAuto.ge typically shows 30 listings per page
-                    if len(page_listings) < 20:
-                        logger.info(f"[*] Page {page_num} has fewer than expected listings, likely last page")
-                        break
+                                logger.info(f"[OK] Page {page_num}: {len(page_listings)} listings ({new_count} new)")
+                        except Exception as e:
+                            logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
 
-                except Exception as e:
-                    logger.warning(f"[WARN] Error fetching page {page_num}: {e}")
-                    # Stop pagination on error
-                    break
-
-            logger.info(f"[OK] Fetched {pages_fetched} pages with a total of {len(all_listings)} unique listings")
-
+            logger.info(f"[OK] Total collected: {len(all_listings)} unique listings")
             return all_listings
 
         except Exception as e:
             logger.error(f"[ERROR] Error fetching search results: {e}")
             return []
+
+    def _fetch_page(self, base_url: str, params: Dict, page_num: int) -> Optional[List[Dict]]:
+        """
+        Fetch a single page of search results (for parallel page fetching)
+
+        Args:
+            base_url: Base URL for the search
+            params: Query parameters
+            page_num: Page number to fetch
+
+        Returns:
+            List of listings from the page or None on failure
+        """
+
+        try:
+            page_params = params.copy()
+            page_params["page"] = page_num
+
+            logger.debug(f"[*] Fetching page {page_num}...")
+            response = self._make_request(base_url, params=page_params)
+
+            if not response:
+                logger.warning(f"[WARN] Failed to fetch page {page_num}")
+                return None
+
+            page_listings = self._parse_search_results(response["html"], base_url)
+            return page_listings if page_listings else None
+
+        except Exception as e:
+            logger.error(f"[ERROR] Error fetching page {page_num}: {e}")
+            return None
 
     def fetch_listing_details(self, listing_id: str) -> Optional[Dict]:
         """
@@ -216,9 +250,6 @@ class MyAutoScraper:
             response = self._make_request(url)
             if not response:
                 return None
-
-            # Add delay between requests
-            time.sleep(self.delay)
 
             # Parse listing details
             listing_data = self._parse_listing_details(response["html"], listing_id, url)

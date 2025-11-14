@@ -384,14 +384,14 @@ class CarListingMonitor:
                 self.stats["errors_encountered"] += 1
             return [], 0
 
-    def _fetch_listing_details_parallel(self, listings: List[Dict], search_name: str = None, max_workers: int = 3) -> List[Dict]:
+    def _fetch_listing_details_parallel(self, listings: List[Dict], search_name: str = None, max_workers: int = 8) -> List[Dict]:
         """
         Fetch listing details in parallel for multiple listings
 
         Args:
             listings: List of listings to fetch details for
             search_name: Name of search (for logging)
-            max_workers: Maximum number of concurrent threads (default 3)
+            max_workers: Maximum number of concurrent threads (default 8 for faster fetching)
 
         Returns:
             List of detailed listings
@@ -400,9 +400,11 @@ class CarListingMonitor:
         detailed_listings = []
         failed_count = 0
 
-        logger.info(f"[*] Fetching details for {len(listings)} listings in parallel ({max_workers} workers)...")
+        # Adjust workers based on number of listings
+        actual_workers = min(max_workers, max(1, len(listings)))
+        logger.info(f"[*] Fetching details for {len(listings)} listings in parallel ({actual_workers} workers)...")
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=actual_workers) as executor:
             # Submit all tasks
             future_to_listing = {
                 executor.submit(self._fetch_and_store_listing, listing): listing

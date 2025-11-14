@@ -357,18 +357,34 @@ class CarListingMonitor:
             # Flatten all listings to ensure fuel_type and other details are included
             flattened_listings = [self._flatten_listing_for_notification(listing) for listing in new_listings]
 
+            # Get notification channel ID from environment
+
+
+            import os
+
+
+            notification_channel_id = os.getenv("TELEGRAM_NOTIFICATION_CHANNEL_ID")
+
+
+            if notification_channel_id:
+
+
+                notification_channel_id = int(notification_channel_id)
+
+
+
             # Determine notification method based on count
             if len(flattened_listings) == 1:
-                logger.info("[*] Sending single listing notification...")
-                success = self.notifier.send_new_listing(flattened_listings[0])
+                logger.info("[*] Sending single listing notification to channel...")
+                success = self.notifier.send_new_listing(flattened_listings[0], chat_id=notification_channel_id)
                 if success:
                     # Record the notification in database
                     listing_id = flattened_listings[0].get("listing_id")
                     if listing_id:
                         self.database.record_notification(listing_id, "telegram")
             else:
-                logger.info(f"[*] Sending {len(flattened_listings)} listings notification...")
-                success = self.notifier.send_new_listings(flattened_listings)
+                logger.info(f"[*] Sending {len(flattened_listings)} listings notification to channel...")
+                success = self.notifier.send_new_listings(flattened_listings, chat_id=notification_channel_id)
                 if success:
                     # Record notifications for each listing in database
                     for listing in flattened_listings:

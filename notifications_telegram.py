@@ -170,27 +170,60 @@ class TelegramNotificationManager:
             logger.error(f"Request failed: {e}")
             return False
 
-    def send_new_listing_notification(self, car_data):
-        """Send notification for a single new listing"""
+    def send_new_listing_notification(self, car_data, chat_id=None):
+        """Send notification for a single new listing
+
+        Args:
+            car_data: Dictionary with car details
+            chat_id: Optional chat_id to send to (defaults to self.chat_id)
+        """
 
         message = self._format_new_listing(car_data)
-        return self.send_message(message)
 
-    def send_new_listings_notification(self, cars_list):
-        """Send notification for multiple new listings"""
+        # Use provided chat_id or default to instance chat_id
+        if chat_id:
+            # Temporarily override chat_id for this message
+            original_chat_id = self.chat_id
+            self.chat_id = chat_id
+            result = self.send_message(message)
+            self.chat_id = original_chat_id
+            return result
+        else:
+            return self.send_message(message)
+
+    def send_new_listings_notification(self, cars_list, chat_id=None):
+        """Send notification for multiple new listings
+
+        Args:
+            cars_list: List of car data dictionaries
+            chat_id: Optional chat_id to send to (defaults to self.chat_id)
+        """
 
         if len(cars_list) == 1:
-            return self.send_new_listing_notification(cars_list[0])
+            return self.send_new_listing_notification(cars_list[0], chat_id=chat_id)
 
         # Split listings into batches to avoid exceeding Telegram's 4096 character limit
         # Each batch will be sent as a separate message
         batches = self._split_listings_into_batches(cars_list, max_listings_per_batch=10)
         all_sent = True
 
-        for batch_num, batch in enumerate(batches, 1):
-            message = self._format_multiple_listings(batch, batch_num=batch_num, total_batches=len(batches), total_listings=len(cars_list))
-            if not self.send_message(message):
-                all_sent = False
+        # Use provided chat_id or default to instance chat_id
+        if chat_id:
+            # Temporarily override chat_id for these messages
+            original_chat_id = self.chat_id
+            self.chat_id = chat_id
+
+            for batch_num, batch in enumerate(batches, 1):
+                message = self._format_multiple_listings(batch, batch_num=batch_num, total_batches=len(batches), total_listings=len(cars_list))
+                if not self.send_message(message):
+                    all_sent = False
+
+            self.chat_id = original_chat_id
+        else:
+            for batch_num, batch in enumerate(batches, 1):
+                message = self._format_multiple_listings(batch, batch_num=batch_num, total_batches=len(batches), total_listings=len(cars_list))
+                if not self.send_message(message):
+                    all_sent = False
 
         return all_sent
 

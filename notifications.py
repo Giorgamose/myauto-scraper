@@ -46,7 +46,7 @@ class NotificationManager:
 
         return self.telegram is not None
 
-    def send_new_listing(self, car_data: Dict) -> bool:
+    def send_new_listing(self, car_data: Dict, chat_id: int = None) -> bool:
         """
         Send notification for a single new listing
 
@@ -64,7 +64,7 @@ class NotificationManager:
         try:
             logger.info(f"[*] Sending notification for listing: {car_data.get('listing_id')}")
 
-            success = self.telegram.send_new_listing_notification(car_data)
+            success = self.telegram.send_new_listing_notification(car_data, chat_id=chat_id)
 
             if success:
                 logger.info("[OK] Notification sent successfully")
@@ -77,7 +77,7 @@ class NotificationManager:
             logger.error(f"[ERROR] Error sending notification: {e}")
             return False
 
-    def send_new_listings(self, cars_list: List[Dict]) -> bool:
+    def send_new_listings(self, cars_list: List[Dict], chat_id: int = None) -> bool:
         """
         Send notification for multiple new listings
 
@@ -99,7 +99,7 @@ class NotificationManager:
         try:
             logger.info(f"[*] Sending notification for {len(cars_list)} listings")
 
-            success = self.telegram.send_new_listings_notification(cars_list)
+            success = self.telegram.send_new_listings_notification(cars_list, chat_id=chat_id)
 
             if success:
                 logger.info("[OK] Notification sent successfully")

@@ -347,15 +347,15 @@ class MyAutoScraper:
                             logger.debug("[*] Search results page - waiting for listings...")
                             page.wait_for_selector(
                                 'a[href*="/pr/"]',  # Faster selector - listing links load early
-                                timeout=1000  # Reduced from 5000ms to 1000ms (1 second)
+                                timeout=60000  # 60 seconds wait for listings to appear
                             )
                             logger.debug("[OK] Listings loaded")
                     except Exception as e:
                         logger.debug(f"[*] Content wait timed out or failed (may be OK): {e}")
                         # Continue anyway - page might still have content
 
-                    # Minimal delay to ensure content is rendered (greatly reduced for speed)
-                    delay = 0.5 if is_detail_page else 0.3  # Reduced from 3s/2s to 0.5s/0.3s
+                    # Delay to ensure content is fully rendered
+                    delay = 15.0 if is_detail_page else 15.0  # 15 seconds for both search and detail pages
                     time.sleep(delay)
 
                     html_content = page.content()

@@ -375,9 +375,20 @@ class MyAutoScraper:
                     except Exception as e:
                         logger.debug(f"    Could not read headers: {e}")
 
-                    # Log first 300 chars of HTML for inspection
-                    html_snippet = html_content[:300].replace('\n', ' ').replace('\t', ' ')
-                    logger.debug(f"    HTML snippet: {html_snippet}...")
+                    # Log first 500 chars of HTML for inspection
+                    html_snippet = html_content[:500].replace('\n', ' ').replace('\t', ' ')
+                    logger.info(f"[DEBUG] HTML snippet (first 500 chars): {html_snippet}...")
+
+                    # If HTML seems wrong (too small or no listings), save it for inspection
+                    if len(html_content) < 200000 and "/pr/" not in html_content:
+                        logger.warning("[DEBUG] HTML seems incomplete - saving to debug file")
+                        try:
+                            debug_file = f"/tmp/myauto_debug_{int(time.time())}.html"
+                            with open(debug_file, 'w', encoding='utf-8') as f:
+                                f.write(html_content)
+                            logger.warning(f"[DEBUG] Saved HTML to: {debug_file}")
+                        except Exception as e:
+                            logger.debug(f"[DEBUG] Could not save debug HTML: {e}")
 
                     # Check status code
                     if status_code == 200:
